@@ -1,0 +1,18 @@
+{
+  "name": "prxy-client",
+  "description": "TypeScript client for Claude AI proxy server - PRXY",
+  "private": true,
+  "scripts": {
+    "start": "ts-node client.ts",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.50.3",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}

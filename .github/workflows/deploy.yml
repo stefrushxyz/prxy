@@ -1,0 +1,151 @@
+name: Deploy PRXY to AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: prxy
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
+      repo-url: ${{ steps.build-image.outputs.repo-url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Create ECR repository if it doesn't exist
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} || \
+          aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }}
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "repo-url=$ECR_REGISTRY/$ECR_REPOSITORY" >> $GITHUB_OUTPUT
+
+  deploy-infra:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check required secrets
+        id: check_secrets
+        run: |
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] || [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] || [ -z "${{ secrets.PULUMI_ACCESS_TOKEN }}" ] || [ -z "${{ secrets.S3_BUCKET }}" ] || [ -z "${{ secrets.ALLOWED_API_KEYS }}" ]; then
+            echo "Required secrets are missing. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, PULUMI_ACCESS_TOKEN, S3_BUCKET, and ALLOWED_API_KEYS secrets."
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "22"
+
+      - name: Install Pulumi
+        run: |
+          curl -fsSL https://get.pulumi.com | sh
+          export PATH=$PATH:$HOME/.pulumi/bin
+          echo "$HOME/.pulumi/bin" >> $GITHUB_PATH
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create S3 bucket if it doesn't exist
+        run: |
+          aws s3api head-bucket --bucket ${{ secrets.S3_BUCKET }} 2>/dev/null || \
+          aws s3 mb s3://${{ secrets.S3_BUCKET }}
+
+      - name: Install dependencies
+        working-directory: ./infra
+        run: npm install
+
+      - name: Setup Pulumi configuration
+        working-directory: ./infra
+        run: |
+          # Get ECR Repository URL from the previous job or re-derive if needed
+          ECR_REPO_URL="${{ needs.build-and-push.outputs.repo-url }}"
+
+          # Fallback: If the output isn't available, get from AWS again
+          if [ -z "$ECR_REPO_URL" ]; then
+            ECR_REPO_URL=$(aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --query 'repositories[0].repositoryUri' --output text)
+          fi
+
+          # Setup Pulumi stack
+          pulumi stack select dev --create
+
+          # Set configs
+          pulumi config set aws:region ${{ env.AWS_REGION }}
+          pulumi config set ECR_REPO_URL "$ECR_REPO_URL"
+          pulumi config set S3_BUCKET ${{ secrets.S3_BUCKET }}
+          pulumi config set IMAGE_TAG ${{ github.sha }}
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      - name: Create EC2 environment file
+        run: |
+          cat > prxy.env << EOL
+          PORT=3000
+          CLAUDE_API_URL=https://api.anthropic.com
+          ALLOWED_API_KEYS=${{ secrets.ALLOWED_API_KEYS }}
+          EOL
+          aws s3 cp prxy.env s3://${{ secrets.S3_BUCKET }}/prxy.env
+
+      - name: Deploy with Pulumi
+        id: pulumi-deploy
+        working-directory: ./infra
+        run: |
+          set +e
+          pulumi up --yes
+          PULUMI_EXIT_CODE=$?
+          set -e
+
+          if [ $PULUMI_EXIT_CODE -ne 0 ]; then
+            echo "Pulumi deployment failed with exit code $PULUMI_EXIT_CODE"
+            pulumi stack export > pulumi-failed-state.json
+            aws s3 cp pulumi-failed-state.json s3://${{ secrets.S3_BUCKET }}/pulumi-failed-state-$(date +%Y%m%d%H%M%S).json
+            exit $PULUMI_EXIT_CODE
+          fi
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      - name: Output deployment information
+        if: success()
+        working-directory: ./infra
+        run: |
+          echo "Deployment successful!"
+          ENDPOINT=$(pulumi stack output endpoint || echo "No endpoint output defined")
+          if [ ! -z "$ENDPOINT" ] && [ "$ENDPOINT" != "No endpoint output defined" ]; then
+            echo "Application is available at: $ENDPOINT"
+          fi
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
