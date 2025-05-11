@@ -165,8 +165,37 @@ EOL
 
 chmod +x /home/ubuntu/prxy/update.sh
 
+# Create S3-triggered update script
+cat > /home/ubuntu/prxy/check-update.sh << 'EOL'
+#!/bin/bash
+S3_BUCKET=$1
+
+# Check if the update trigger file exists in S3
+if aws s3 ls s3://$S3_BUCKET/update-trigger.txt &>/dev/null; then
+  echo "Found update trigger at $(date)" >> /home/ubuntu/prxy/update.log
+  
+  # Get the content of the trigger file (should be ECR_REPO_URL:IMAGE_TAG)
+  aws s3 cp s3://$S3_BUCKET/update-trigger.txt /home/ubuntu/prxy/update-trigger.txt
+  TRIGGER_CONTENT=$(cat /home/ubuntu/prxy/update-trigger.txt)
+  
+  # Parse the content
+  ECR_REPO_URL=$(echo $TRIGGER_CONTENT | cut -d':' -f1)
+  IMAGE_TAG=$(echo $TRIGGER_CONTENT | cut -d':' -f2)
+  
+  # Run the update script with the new parameters
+  /home/ubuntu/prxy/update.sh $S3_BUCKET $ECR_REPO_URL $IMAGE_TAG
+  
+  # Remove the trigger file to avoid repeated updates
+  rm -f /home/ubuntu/prxy/update-trigger.txt
+fi
+EOL
+
+chmod +x /home/ubuntu/prxy/check-update.sh
+
 # Setup a cron job to check for updates every minute
 echo "* * * * * /home/ubuntu/prxy/update.sh ${s3Bucket} ${ecrRepoUrl} ${imageTag}" | crontab -
+echo "*/1 * * * * root /home/ubuntu/prxy/check-update.sh ${s3Bucket}" > /etc/cron.d/prxy-check-update
+chmod 0644 /etc/cron.d/prxy-check-update
 
 # Setup a service to restart the container on reboot
 cat > /etc/systemd/system/prxy.service << EOL

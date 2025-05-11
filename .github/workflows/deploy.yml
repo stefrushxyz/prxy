@@ -148,14 +148,28 @@ jobs:
           if [ -n "$INSTANCE_ID" ]; then
             echo "Found EC2 instance: $INSTANCE_ID, triggering update..."
             
-            # Run update command via SSM
+            # Try SSM first (if permissions allow)
+            set +e
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
               --parameters commands="/home/ubuntu/prxy/update.sh ${{ secrets.S3_BUCKET }} ${{ needs.build-and-push.outputs.repo-url }} ${{ github.sha }}" \
-              --comment "Update PRXY container"
-            
-            echo "Update command sent. Container will be updated shortly."
+              --comment "Update PRXY container" 2>/dev/null
+
+            SSM_EXIT_CODE=$?
+            set -e
+
+            if [ $SSM_EXIT_CODE -eq 0 ]; then
+              echo "Update command sent via SSM. Container will be updated shortly."
+            else
+              echo "SSM command failed, falling back to S3 trigger method..."
+              
+              # Alternative: Create a trigger file in S3 that the EC2 instance will poll for
+              echo "${{ needs.build-and-push.outputs.repo-url }}:${{ github.sha }}" > update-trigger.txt
+              aws s3 cp update-trigger.txt s3://${{ secrets.S3_BUCKET }}/update-trigger.txt
+              
+              echo "Created update trigger in S3 bucket. Instance will pull updates on next cron cycle."
+            fi
           else
             echo "EC2 instance not found. It may be creating for the first time."
           fi
