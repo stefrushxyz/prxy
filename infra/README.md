@@ -19,29 +19,6 @@ The deployment process:
 - **Security Group**: Allows traffic on port 3000 (PRXY) and port 22 (SSH) from any IP address
 - **IAM Role**: Provides the EC2 instance with permissions to pull from ECR and access S3
 
-## SSH Access
-
-The EC2 instance allows SSH access from any IP address. You can connect using standard SSH methods:
-
-```bash
-ssh -i your-key-pair.pem ubuntu@<EC2-Public-IP>
-```
-
-You can also use EC2 Instance Connect through the AWS Console or AWS CLI for convenience:
-
-1. Through the AWS Console:
-
-   - Go to the EC2 service
-   - Select the instance
-   - Click "Connect" button
-   - Choose "EC2 Instance Connect" tab
-   - Click "Connect" button
-
-2. Using the AWS CLI:
-   ```bash
-   aws ec2-instance-connect ssh --instance-id i-01234567890abcdef --os-user ubuntu
-   ```
-
 ## GitHub Actions Workflow
 
 The GitHub Actions workflow automates the entire deployment process:
@@ -109,3 +86,75 @@ http://<EC2-Public-IP>:3000
 ```
 
 The public IP address is output at the end of the Pulumi deployment.
+
+## SSH Access
+
+### Connecting to the EC2 Instance
+
+The EC2 instance allows SSH access from any IP address. You can connect using standard SSH methods:
+
+```bash
+ssh -i your-key-pair.pem ubuntu@<EC2-Public-IP>
+```
+
+You can also use EC2 Instance Connect through the AWS Console or AWS CLI for convenience:
+
+1. Through the AWS Console:
+
+   - Go to the EC2 service
+   - Select the instance
+   - Click "Connect" button
+   - Choose "EC2 Instance Connect" tab
+   - Click "Connect" button
+
+2. Using the AWS CLI:
+
+   ```bash
+   aws ec2-instance-connect ssh --instance-id i-01234567890abcdef --os-user ubuntu
+   ```
+
+### Docker Container Management
+
+Once connected to the instance via SSH, you can manage the Docker container:
+
+1. List running containers:
+
+   ```bash
+   docker ps
+   ```
+
+2. List all containers (including stopped ones):
+
+   ```bash
+   docker ps -a
+   ```
+
+3. View container logs:
+
+   ```bash
+   docker logs prxy
+   ```
+
+4. Follow container logs in real-time:
+
+   ```bash
+   docker logs -f prxy
+   ```
+
+5. Restart the container:
+
+   ```bash
+   docker restart prxy
+   ```
+
+6. View container details:
+
+   ```bash
+   docker inspect prxy
+   ```
+
+7. Check update logs:
+
+   ```bash
+   cat /home/ubuntu/prxy/update.log
+   ```
