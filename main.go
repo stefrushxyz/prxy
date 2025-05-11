@@ -34,24 +34,75 @@ type contextKey string
 // Key for request ID in context
 const requestIDKey contextKey = "requestID"
 
+// Color codes for terminal output
+const (
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorBlue   = "\033[34m"
+	colorPurple = "\033[35m"
+	colorCyan   = "\033[36m"
+)
+
+// Log level prefixes with colors
+const (
+	prefixInfo    = colorGreen + "[INFO]" + colorReset + " "
+	prefixError   = colorRed + "[ERROR]" + colorReset + " "
+	prefixWarning = colorYellow + "[WARN]" + colorReset + " "
+	prefixDebug   = colorCyan + "[DEBUG]" + colorReset + " "
+	prefixRequest = colorBlue + "[REQ]" + colorReset + " "
+	prefixSystem  = colorPurple + "[SYS]" + colorReset + " "
+)
+
+// logInfo logs informational messages
+func logInfo(format string, v ...interface{}) {
+	log.Printf(prefixInfo+format, v...)
+}
+
+// logError logs error messages
+func logError(format string, v ...interface{}) {
+	log.Printf(prefixError+format, v...)
+}
+
+// logWarning logs warning messages
+func logWarning(format string, v ...interface{}) {
+	log.Printf(prefixWarning+format, v...)
+}
+
+// logDebug logs debug messages
+func logDebug(format string, v ...interface{}) {
+	log.Printf(prefixDebug+format, v...)
+}
+
+// logRequest logs request-related messages
+func logRequest(requestID, format string, v ...interface{}) {
+	log.Printf(prefixRequest+"[%s] "+format, append([]interface{}{requestID}, v...)...)
+}
+
+// logSystem logs system events
+func logSystem(format string, v ...interface{}) {
+	log.Printf(prefixSystem+format, v...)
+}
+
 // main is the entry point for the proxy server
 func main() {
 	// Configure logger with timestamp
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	log.Println("Starting Claude proxy server...")
+	logSystem("Starting Claude proxy server...")
 
 	// Load environment variables from .env file
 	err := godotenv.Load()
 	if err != nil {
-		log.Println("Warning: No .env file found")
+		logWarning("No .env file found")
 	}
 
 	// Check for allowed API keys configuration
 	allowedAPIKeysStr := os.Getenv("ALLOWED_API_KEYS")
 	if allowedAPIKeysStr != "" {
-		log.Println("API key validation is enabled")
+		logInfo("API key validation is enabled")
 	} else {
-		log.Println("Warning: No ALLOWED_API_KEYS set - all API keys will be accepted")
+		logWarning("No ALLOWED_API_KEYS set - all API keys will be accepted")
 	}
 
 	// Set up the router
@@ -60,7 +111,7 @@ func main() {
 	// Health check endpoint
 	r.HandleFunc("/health", loggingMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Context().Value(requestIDKey).(string)
-		log.Printf("[%s] Health check request from %s", requestID, r.RemoteAddr)
+		logRequest(requestID, "Health check request from %s", r.RemoteAddr)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})).Methods("GET")
@@ -88,7 +139,7 @@ func main() {
 	if claudeURL == "" {
 		claudeURL = defaultClaudeURL
 	}
-	log.Printf("Using Claude API URL: %s", claudeURL)
+	logInfo("Using Claude API URL: %s", claudeURL)
 
 	// Create a new server
 	serverAddr := ":" + port
@@ -103,9 +154,9 @@ func main() {
 
 	// Start the server in a goroutine
 	go func() {
-		log.Printf("Claude proxy server running at http://localhost:%s", port)
+		logSystem("Claude proxy server running at http://localhost:%s", port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Server error: %v", err)
+			logError("Server error: %v", err)
 			cancel() // Cancel context to trigger shutdown
 		}
 	}()
@@ -118,9 +169,9 @@ func main() {
 	// Block until we receive a signal or context is canceled
 	select {
 	case sig := <-signalChan:
-		log.Printf("Received signal: %v. Shutting down server...", sig)
+		logSystem("Received signal: %v. Shutting down server...", sig)
 	case <-ctx.Done():
-		log.Println("Shutting down server due to error...")
+		logSystem("Shutting down server due to error...")
 	}
 
 	// Create a deadline context for shutdown
@@ -129,9 +180,9 @@ func main() {
 
 	// Attempt graceful shutdown
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Server shutdown failed: %v", err)
+		logError("Server shutdown failed: %v", err)
 	} else {
-		log.Println("Server shutdown gracefully")
+		logSystem("Server shutdown gracefully")
 	}
 }
 
@@ -148,12 +199,12 @@ func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		r = r.WithContext(ctx)
 
 		startTime := time.Now()
-		log.Printf("[%s] Request received: %s %s from %s", requestID, r.Method, r.URL.Path, r.RemoteAddr)
+		logRequest(requestID, "→ %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 
 		next(w, r)
 
 		duration := time.Since(startTime)
-		log.Printf("[%s] Request completed in %v", requestID, duration)
+		logRequest(requestID, "← Completed in %v", duration)
 	}
 }
 
@@ -209,12 +260,12 @@ func extractAPIKey(r *http.Request) string {
 func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 	// Get request ID from context
 	requestID := r.Context().Value(requestIDKey).(string)
-	log.Printf("[%s] Processing Claude API request", requestID)
+	logRequest(requestID, "Processing Claude API request")
 
 	// Extract and validate API key
 	apiKey := extractAPIKey(r)
 	if !validateAPIKey(apiKey) {
-		log.Printf("[%s] Unauthorized: Invalid API key", requestID)
+		logRequest(requestID, "Unauthorized: Invalid API key")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Unauthorized: Invalid API key",
@@ -225,7 +276,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 	// Read the request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Printf("[%s] Error reading request body: %v", requestID, err)
+		logError("[%s] Error reading request body: %v", requestID, err)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Failed to read request body",
@@ -237,7 +288,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 	// Add stream parameter to the request body if it's not already present
 	var requestData map[string]interface{}
 	if err := json.Unmarshal(body, &requestData); err != nil {
-		log.Printf("[%s] Invalid JSON in request body: %v", requestID, err)
+		logError("[%s] Invalid JSON in request body: %v", requestID, err)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Invalid JSON request body",
@@ -247,7 +298,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Log model being used if present
 	if model, ok := requestData["model"].(string); ok {
-		log.Printf("[%s] Using model: %s", requestID, model)
+		logRequest(requestID, "Using model: %s", model)
 	}
 
 	// Check if client wants streaming
@@ -267,7 +318,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 	// Convert modified request back to JSON
 	modifiedBody, err := json.Marshal(requestData)
 	if err != nil {
-		log.Printf("[%s] Failed to marshal modified request: %v", requestID, err)
+		logError("[%s] Failed to marshal modified request: %v", requestID, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Failed to process request",
@@ -283,11 +334,11 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create a new request to the Claude API (always use /v1/messages endpoint)
 	claudeAPIURL := claudeURL + "/v1/messages"
-	log.Printf("[%s] Forwarding request to Claude API at %s", requestID, claudeAPIURL)
+	logRequest(requestID, "Forwarding request to Claude API at %s", claudeAPIURL)
 
 	proxyReq, err := http.NewRequest("POST", claudeAPIURL, bytes.NewBuffer(modifiedBody))
 	if err != nil {
-		log.Printf("[%s] Failed to create proxy request: %v", requestID, err)
+		logError("[%s] Failed to create proxy request: %v", requestID, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Failed to create proxy request",
@@ -310,9 +361,9 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 				proxyReq.Header.Set(header, value)
 				// Log headers being set (but hide actual auth values)
 				if headerName == "authorization" || headerName == "x-api-key" {
-					log.Printf("[%s] Forwarding header: %s: [REDACTED]", requestID, header)
+					logDebug("[%s] Forwarding header: %s: [REDACTED]", requestID, header)
 				} else {
-					log.Printf("[%s] Forwarding header: %s: %s", requestID, header, value)
+					logDebug("[%s] Forwarding header: %s: %s", requestID, header, value)
 				}
 			}
 		}
@@ -325,7 +376,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := client.Do(proxyReq)
 	if err != nil {
-		log.Printf("[%s] Failed to send request to Claude API: %v", requestID, err)
+		logError("[%s] Failed to send request to Claude API: %v", requestID, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": fmt.Sprintf("Failed to send request to Claude API: %v", err),
@@ -333,7 +384,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	log.Printf("[%s] Claude API responded with status: %d in %v", requestID, resp.StatusCode, time.Since(startTime))
+	logRequest(requestID, "Claude API responded with status: %d in %v", resp.StatusCode, time.Since(startTime))
 
 	// Copy response headers
 	for key, values := range resp.Header {
@@ -348,14 +399,14 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 	if !streamRequested || resp.StatusCode != http.StatusOK {
 		responseBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Printf("[%s] Error reading Claude API response body: %v", requestID, err)
+			logError("[%s] Error reading Claude API response body: %v", requestID, err)
 			return
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			log.Printf("[%s] Claude API error response: %s", requestID, string(responseBody))
+			logError("[%s] Claude API error response: %s", requestID, string(responseBody))
 		} else {
-			log.Printf("[%s] Sending complete non-streaming response (%d bytes)", requestID, len(responseBody))
+			logInfo("[%s] Sending complete non-streaming response (%d bytes)", requestID, len(responseBody))
 		}
 
 		// For proper handling of non-streaming responses, verify the JSON is valid
@@ -364,7 +415,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 			// Just verify it's valid JSON
 			var jsonCheck interface{}
 			if err := json.Unmarshal(responseBody, &jsonCheck); err != nil {
-				log.Printf("[%s] Warning: Invalid JSON in Claude API non-streaming response: %v", requestID, err)
+				logWarning("[%s] Invalid JSON in Claude API non-streaming response: %v", requestID, err)
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(map[string]string{
 					"error": "Invalid JSON in Claude API response",
@@ -383,10 +434,10 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// For streaming responses, flush each chunk as it arrives
-	log.Printf("[%s] Starting to stream response", requestID)
+	logInfo("[%s] Starting to stream response", requestID)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		log.Printf("[%s] Streaming not supported by server", requestID)
+		logError("[%s] Streaming not supported by server", requestID)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Streaming not supported by server",
@@ -410,16 +461,16 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 			bytesStreamed += n
 			_, writeErr := w.Write(buffer[:n])
 			if writeErr != nil {
-				log.Printf("[%s] Error writing to client: %v", requestID, writeErr)
+				logError("[%s] Error writing to client: %v", requestID, writeErr)
 				return
 			}
 			flusher.Flush()
 		}
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("[%s] Error reading from Claude API: %v", requestID, err)
+				logError("[%s] Error reading from Claude API: %v", requestID, err)
 			} else {
-				log.Printf("[%s] Finished streaming response: %d bytes in %v",
+				logInfo("[%s] Finished streaming response: %d bytes in %v",
 					requestID, bytesStreamed, time.Since(streamStart))
 			}
 			break
