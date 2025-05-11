@@ -15,6 +15,7 @@ The deployment process:
 
 - **VPC**: Dedicated VPC for the PRXY server
 - **EC2 Instance**: t2.micro instance running the PRXY container
+- **Elastic IP**: Static IP address assigned to the EC2 instance
 - **Security Group**: Allows traffic on port 3000 (PRXY) and port 22 (SSH) from any IP address
 - **IAM Role**: Provides the EC2 instance with permissions to pull from ECR and access S3
 

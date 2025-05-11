@@ -245,8 +245,18 @@ const instance = new aws.ec2.Instance("prxy-ec2-instance", {
   },
 });
 
+// Create an Elastic IP for the instance
+const elasticIp = new aws.ec2.Eip("prxy-eip", {
+  vpc: true,
+  instance: instance.id,
+  tags: {
+    Name: "prxy-eip",
+    Project: projectName,
+  },
+});
+
 // Export the public IP of the instance
-export const publicIp = instance.publicIp;
-export const endpoint = pulumi.interpolate`http://${instance.publicIp}:3000`;
+export const publicIp = elasticIp.publicIp;
+export const endpoint = pulumi.interpolate`http://${elasticIp.publicIp}:3000`;
 export const deployedImageTag = imageTag;
 export const deployedAt = deploymentTimestamp.toString();
