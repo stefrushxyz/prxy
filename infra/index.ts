@@ -5,6 +5,7 @@ import * as awsx from "@pulumi/awsx";
 // Get configuration
 const config = new pulumi.Config();
 const projectName = config.get("PROJECT_NAME") || "prxy";
+const ec2InstanceType = config.get("EC2_INSTANCE_TYPE") || "t2.micro";
 const ecrRepoUrl = config.require("ECR_REPO_URL");
 const s3Bucket = config.require("S3_BUCKET");
 const imageTag = config.get("IMAGE_TAG") || "latest";
@@ -223,7 +224,7 @@ const instance = new aws.ec2.Instance("prxy-ec2-instance", {
       { name: "virtualization-type", values: ["hvm"] },
     ],
   }).id,
-  instanceType: "t2.micro",
+  instanceType: ec2InstanceType,
   subnetId: vpc.publicSubnetIds[0],
   vpcSecurityGroupIds: [securityGroup.id],
   iamInstanceProfile: instanceProfile.name,
