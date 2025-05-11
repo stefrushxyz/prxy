@@ -3,7 +3,7 @@
   "description": "TypeScript client for Claude AI proxy server - PRXY",
   "private": true,
   "scripts": {
-    "start": "ts-node client.ts",
+    "start": "ts-node index.ts",
     "typecheck": "tsc"
   },
   "dependencies": {
