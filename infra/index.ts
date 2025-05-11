@@ -116,8 +116,6 @@ const instanceProfile = new aws.iam.InstanceProfile("prxy-instance-profile", {
 
 // User data script to install Docker and run the container
 const userData = pulumi.interpolate`#!/bin/bash
-# Deployment timestamp: ${deploymentTimestamp}
-
 # Install Docker
 sudo apt-get update
 sudo apt-get install -y docker.io awscli
@@ -227,7 +225,7 @@ const instance = new aws.ec2.Instance("prxy-ec2-instance", {
     filters: [
       {
         name: "name",
-        values: ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"],
+        values: ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"],
       },
       { name: "virtualization-type", values: ["hvm"] },
     ],
@@ -238,7 +236,7 @@ const instance = new aws.ec2.Instance("prxy-ec2-instance", {
   iamInstanceProfile: instanceProfile.name,
   userData: userData,
   tags: {
-    Name: "prxy",
+    Name: projectName,
     ImageTag: imageTag,
     DeployedAt: deploymentTimestamp.toString(),
     Project: projectName,

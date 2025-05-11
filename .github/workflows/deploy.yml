@@ -1,4 +1,4 @@
-name: Deploy PRXY to AWS
+name: Deploy to AWS
 
 on:
   push:
@@ -7,7 +7,9 @@ on:
 
 env:
   AWS_REGION: us-east-1
+  PROJECT_NAME: prxy
   ECR_REPOSITORY: prxy
+  EC2_INSTANCE_TYPE: t3.micro
 
 jobs:
   build-and-push:
@@ -104,7 +106,9 @@ jobs:
           pulumi stack select dev --create
 
           # Set configs
+          pulumi config set PROJECT_NAME ${{ env.PROJECT_NAME }}
           pulumi config set aws:region ${{ env.AWS_REGION }}
+          pulumi config set EC2_INSTANCE_TYPE ${{ env.EC2_INSTANCE_TYPE }}
           pulumi config set ECR_REPO_URL "$ECR_REPO_URL"
           pulumi config set S3_BUCKET ${{ secrets.S3_BUCKET }}
           pulumi config set IMAGE_TAG ${{ github.sha }}
@@ -143,7 +147,7 @@ jobs:
         run: |
           # Get instance ID from Pulumi output
           cd ./infra
-          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Project,Values=PRXY" --query "Reservations[*].Instances[*].InstanceId" --output text)
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ env.PROJECT_NAME }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
 
           if [ -n "$INSTANCE_ID" ]; then
             echo "Found EC2 instance: $INSTANCE_ID, triggering update..."
