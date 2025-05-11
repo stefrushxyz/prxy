@@ -6,6 +6,8 @@ import * as awsx from "@pulumi/awsx";
 const config = new pulumi.Config();
 const ecrRepoUrl = config.require("ECR_REPO_URL");
 const s3Bucket = config.require("S3_BUCKET");
+const imageTag = config.get("IMAGE_TAG") || "latest";
+const deploymentTimestamp = Date.now();
 
 // Create a new VPC
 const vpc = new awsx.ec2.Vpc("prxy-vpc", {
@@ -13,6 +15,9 @@ const vpc = new awsx.ec2.Vpc("prxy-vpc", {
   numberOfAvailabilityZones: 1,
   natGateways: {
     strategy: "None",
+  },
+  tags: {
+    Project: "PRXY",
   },
 });
 
@@ -48,6 +53,9 @@ const securityGroup = new aws.ec2.SecurityGroup("prxy-sg", {
       description: "Allow all outbound traffic",
     },
   ],
+  tags: {
+    Project: "PRXY",
+  },
 });
 
 // Create an IAM role for the EC2 instance
@@ -64,6 +72,9 @@ const ec2Role = new aws.iam.Role("prxy-ec2-role", {
       },
     ],
   }),
+  tags: {
+    Project: "PRXY",
+  },
 });
 
 // Attach policies for ECR access
@@ -87,13 +98,25 @@ const s3Policy = new aws.iam.RolePolicyAttachment("prxy-s3-policy", {
   policyArn: "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
 });
 
+// Attach policy for SSM access
+const ssmPolicy = new aws.iam.RolePolicyAttachment("prxy-ssm-policy", {
+  role: ec2Role.name,
+  policyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+});
+
 // Create an instance profile
 const instanceProfile = new aws.iam.InstanceProfile("prxy-instance-profile", {
   role: ec2Role.name,
+  tags: {
+    Project: "PRXY",
+  },
 });
 
 // User data script to install Docker and run the container
 const userData = pulumi.interpolate`#!/bin/bash
+# Deployment timestamp: ${deploymentTimestamp}
+
+# Install Docker
 sudo apt-get update
 sudo apt-get install -y docker.io awscli
 sudo systemctl start docker
@@ -110,8 +133,40 @@ aws ecr get-login-password --region $(curl -s http://169.254.169.254/latest/meta
   docker login --username AWS --password-stdin ${ecrRepoUrl}
 
 # Pull and run the container
-docker pull ${ecrRepoUrl}:latest
-docker run -d -p 3000:3000 --env-file /home/ubuntu/prxy/prxy.env --name prxy ${ecrRepoUrl}:latest
+docker pull ${ecrRepoUrl}:${imageTag}
+docker rm -f prxy 2>/dev/null || true
+docker run -d -p 3000:3000 --env-file /home/ubuntu/prxy/prxy.env --name prxy ${ecrRepoUrl}:${imageTag}
+
+# Create update script
+cat > /home/ubuntu/prxy/update.sh << 'EOL'
+#!/bin/bash
+# Get parameters
+S3_BUCKET=$1
+ECR_REPO_URL=$2
+IMAGE_TAG=$3
+
+# Log update attempt
+echo "Starting update at $(date)" >> /home/ubuntu/prxy/update.log
+
+# Get the environment file from S3
+aws s3 cp s3://$S3_BUCKET/prxy.env /home/ubuntu/prxy/prxy.env
+
+# Get the ECR login token
+aws ecr get-login-password --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) | \
+  docker login --username AWS --password-stdin $ECR_REPO_URL
+
+# Pull and run the container
+docker pull $ECR_REPO_URL:$IMAGE_TAG
+docker rm -f prxy 2>/dev/null || true
+docker run -d -p 3000:3000 --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
+
+echo "Update completed at $(date)" >> /home/ubuntu/prxy/update.log
+EOL
+
+chmod +x /home/ubuntu/prxy/update.sh
+
+# Setup a cron job to check for updates every minute
+echo "* * * * * /home/ubuntu/prxy/update.sh ${s3Bucket} ${ecrRepoUrl} ${imageTag}" | crontab -
 
 # Setup a service to restart the container on reboot
 cat > /etc/systemd/system/prxy.service << EOL
@@ -152,9 +207,15 @@ const instance = new aws.ec2.Instance("prxy-ec2-instance", {
   iamInstanceProfile: instanceProfile.name,
   userData: userData,
   tags: {
+    Name: "prxy",
+    ImageTag: imageTag,
+    DeployedAt: deploymentTimestamp.toString(),
     Project: "PRXY",
   },
 });
 
 // Export the public IP of the instance
 export const publicIp = instance.publicIp;
+export const endpoint = pulumi.interpolate`http://${instance.publicIp}:3000`;
+export const deployedImageTag = imageTag;
+export const deployedAt = deploymentTimestamp.toString();
