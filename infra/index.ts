@@ -95,9 +95,18 @@ const ecrPolicy = new aws.iam.RolePolicy("prxy-ecr-inline-policy", {
 });
 
 // Attach policies for S3 access
-const s3Policy = new aws.iam.RolePolicyAttachment("prxy-s3-policy", {
-  role: ec2Role.name,
-  policyArn: "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+const s3Policy = new aws.iam.RolePolicy("prxy-s3-policy", {
+  role: ec2Role.id,
+  policy: JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Effect: "Allow",
+        Action: ["s3:GetObject", "s3:ListBucket", "s3:DeleteObject"],
+        Resource: [`arn:aws:s3:::${s3Bucket}`, `arn:aws:s3:::${s3Bucket}/*`],
+      },
+    ],
+  }),
 });
 
 // Create an instance profile
