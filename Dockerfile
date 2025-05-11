@@ -1,33 +1,51 @@
-# Use the latest stable version of Go
+# Build stage
 FROM golang:1.24-alpine AS builder
 
+# Set working directory
 WORKDIR /app
 
-# Copy go.mod and go.sum files
-COPY go.mod go.sum* ./
+# Install build dependencies
+RUN apk add --no-cache git
 
-# Download dependencies
+# Copy go.mod and go.sum files and download dependencies first (better caching)
+COPY go.mod go.sum* ./
 RUN go mod download
 
 # Copy the source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/prxy
+# Build the application with optimizations
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/prxy
 
-# Use a smaller image for the final application
-FROM alpine:latest
+# Runtime stage
+FROM alpine:3
 
+# Set working directory
 WORKDIR /app
 
-# Install CA certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Create a non-root user and group to run the application
+RUN addgroup -S prxy && adduser -S prxy -G prxy
+
+# Install required packages
+RUN apk --no-cache add ca-certificates tzdata curl
 
 # Copy the binary from the builder stage
 COPY --from=builder /app/prxy /app/prxy
 
-# Expose the default port
+# Set proper permissions
+RUN chmod +x /app/prxy && \
+    chown -R prxy:prxy /app
+
+# Define the user to run the application
+USER prxy
+
+# Expose the port
 EXPOSE 3000
+
+# Add healthcheck
+# Checks every 30s, with 5s timeout, 5 retries, and starts after 30s
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 \
+    CMD curl -f http://localhost:3000/health || exit 1
 
 # Run the application
 CMD ["/app/prxy"] 
