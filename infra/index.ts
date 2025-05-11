@@ -4,6 +4,7 @@ import * as awsx from "@pulumi/awsx";
 
 // Get configuration
 const config = new pulumi.Config();
+const projectName = config.get("PROJECT_NAME") || "prxy";
 const ecrRepoUrl = config.require("ECR_REPO_URL");
 const s3Bucket = config.require("S3_BUCKET");
 const imageTag = config.get("IMAGE_TAG") || "latest";
@@ -17,7 +18,7 @@ const vpc = new awsx.ec2.Vpc("prxy-vpc", {
     strategy: "None",
   },
   tags: {
-    Project: "PRXY",
+    Project: projectName,
   },
 });
 
@@ -26,14 +27,6 @@ const securityGroup = new aws.ec2.SecurityGroup("prxy-sg", {
   vpcId: vpc.vpcId,
   description: "Security group for PRXY server",
   ingress: [
-    // Allow SSH access
-    {
-      protocol: "tcp",
-      fromPort: 22,
-      toPort: 22,
-      cidrBlocks: ["0.0.0.0/0"],
-      description: "SSH access",
-    },
     // Allow HTTP access to the proxy server (port 3000)
     {
       protocol: "tcp",
@@ -54,7 +47,7 @@ const securityGroup = new aws.ec2.SecurityGroup("prxy-sg", {
     },
   ],
   tags: {
-    Project: "PRXY",
+    Project: projectName,
   },
 });
 
@@ -73,7 +66,7 @@ const ec2Role = new aws.iam.Role("prxy-ec2-role", {
     ],
   }),
   tags: {
-    Project: "PRXY",
+    Project: projectName,
   },
 });
 
@@ -108,7 +101,7 @@ const ssmPolicy = new aws.iam.RolePolicyAttachment("prxy-ssm-policy", {
 const instanceProfile = new aws.iam.InstanceProfile("prxy-instance-profile", {
   role: ec2Role.name,
   tags: {
-    Project: "PRXY",
+    Project: projectName,
   },
 });
 
@@ -239,7 +232,7 @@ const instance = new aws.ec2.Instance("prxy-ec2-instance", {
     Name: "prxy",
     ImageTag: imageTag,
     DeployedAt: deploymentTimestamp.toString(),
-    Project: "PRXY",
+    Project: projectName,
   },
 });
 
