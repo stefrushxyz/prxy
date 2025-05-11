@@ -247,8 +247,8 @@ const instance = new aws.ec2.Instance("prxy-ec2-instance", {
 
 // Create an Elastic IP for the instance
 const elasticIp = new aws.ec2.Eip("prxy-eip", {
-  vpc: true,
   instance: instance.id,
+  domain: "vpc",
   tags: {
     Name: "prxy-eip",
     Project: projectName,
