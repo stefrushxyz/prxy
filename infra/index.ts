@@ -100,12 +100,6 @@ const s3Policy = new aws.iam.RolePolicyAttachment("prxy-s3-policy", {
   policyArn: "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
 });
 
-// Attach policy for SSM access
-const ssmPolicy = new aws.iam.RolePolicyAttachment("prxy-ssm-policy", {
-  role: ec2Role.name,
-  policyArn: "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
-});
-
 // Create an instance profile
 const instanceProfile = new aws.iam.InstanceProfile("prxy-instance-profile", {
   role: ec2Role.name,
