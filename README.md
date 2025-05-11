@@ -74,7 +74,7 @@ ALLOWED_API_KEYS=key1,key2,key3
 
   - Returns a simple status check to verify the server is running
 
-- **Claude API Proxy**: `POST /api/v1/messages`
+- **Claude API Proxy**: `POST /v1/messages`
   - Forwards requests to the Claude API's `/v1/messages` endpoint
   - Streaming is disabled by default (no need to set `stream: false`)
   - Preserves necessary headers (Authorization, x-api-key, anthropic-version, anthropic-beta)
@@ -159,7 +159,7 @@ PRXY_URL=http://localhost:3000
 You can also use cURL to test the proxy server:
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/messages \
+curl -X POST http://localhost:3000/v1/messages \
   -H "Content-Type: application/json" \
   -H "x-api-key: your_claude_api_key_here" \
   -H "anthropic-version: 2023-06-01" \
@@ -179,7 +179,7 @@ curl -X POST http://localhost:3000/api/v1/messages \
 Note that `stream: false` is the default behavior. For streaming responses, explicitly set `stream: true`:
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/messages \
+curl -X POST http://localhost:3000/v1/messages \
   -H "Content-Type: application/json" \
   -H "x-api-key: your_claude_api_key_here" \
   -H "anthropic-version: 2023-06-01" \

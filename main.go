@@ -66,7 +66,7 @@ func main() {
 	})).Methods("GET")
 
 	// Claude API proxy endpoint
-	r.HandleFunc("/api/v1/messages", loggingMiddleware(claudeProxyHandler)).Methods("POST")
+	r.HandleFunc("/v1/messages", loggingMiddleware(claudeProxyHandler)).Methods("POST")
 
 	// Set up CORS
 	c := cors.New(cors.Options{

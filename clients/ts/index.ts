@@ -23,7 +23,7 @@ export function createClaudeProxyClient(config: ClaudeClientConfig): Anthropic {
   // Create Anthropic client with custom baseURL pointing to our proxy
   const client = new Anthropic({
     apiKey,
-    baseURL: `${config.prxyUrl}/api`,
+    baseURL: config.prxyUrl,
   });
 
   return client;
