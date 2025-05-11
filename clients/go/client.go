@@ -152,7 +152,7 @@ func sendRequest(request ClaudeRequest, proxyURL string, apiKey string, bold, cy
 	fmt.Println()
 
 	// Create a new HTTP request
-	req, err := http.NewRequest("POST", proxyURL+"/api/v1/messages", bytes.NewBuffer(requestBody))
+	req, err := http.NewRequest("POST", proxyURL+"/v1/messages", bytes.NewBuffer(requestBody))
 	if err != nil {
 		fmt.Printf("%s: %v\n", yellow("Error creating request"), err)
 		os.Exit(1)
