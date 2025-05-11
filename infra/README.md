@@ -15,8 +15,19 @@ The deployment process:
 
 - **VPC**: Dedicated VPC for the PRXY server
 - **EC2 Instance**: t2.micro instance running the PRXY container
-- **Security Group**: Allows traffic on port 3000 (PRXY) and 22 (SSH)
+- **Security Group**: Allows traffic on port 3000 (PRXY) and restricts SSH access (port 22) to connections from within the VPC only
 - **IAM Role**: Provides the EC2 instance with permissions to pull from ECR and access S3
+
+## SSH Access Security
+
+The deployment configures SSH access to be restricted to EC2 Instance Connect only:
+
+1. The EC2 instance has EC2 Instance Connect package installed
+2. Password authentication is disabled in SSH configuration
+3. SSH port (22) is only accessible from within the VPC CIDR range
+4. The IAM role has the EC2InstanceConnect policy attached
+
+To connect to the instance, you must use the AWS Console's EC2 Instance Connect feature or the AWS CLI with EC2 Instance Connect credentials. This prevents direct SSH access using SSH keys and improves security by leveraging AWS IAM permissions and short-lived credentials.
 
 ## GitHub Actions Workflow
 
@@ -85,3 +96,21 @@ http://<EC2-Public-IP>:3000
 ```
 
 The public IP address is output at the end of the Pulumi deployment.
+
+## Connecting to the EC2 Instance
+
+To connect to the EC2 instance, use EC2 Instance Connect from the AWS Console:
+
+1. Go to the EC2 service in the AWS Console
+2. Select the instance with the name "prxy"
+3. Click "Connect" button
+4. Choose "EC2 Instance Connect" tab
+5. Click "Connect" button
+
+Alternatively, you can use the AWS CLI to connect using EC2 Instance Connect:
+
+```bash
+aws ec2-instance-connect ssh --instance-id i-1234567890abcdef0 --os-user ubuntu
+```
+
+Note that direct SSH access with SSH keys is disabled for security reasons.
