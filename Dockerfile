@@ -43,8 +43,7 @@ USER prxy
 EXPOSE 3000
 
 # Add healthcheck
-# Checks every 30s, with 5s timeout, 5 retries, and starts after 30s
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 \
+HEALTHCHECK --interval=5s --timeout=2s --start-period=5s --retries=5 \
     CMD curl -f http://localhost:3000/health || exit 1
 
 # Run the application
