@@ -1,6 +1,6 @@
 # PRXY
 
-A lightweight proxy server for the Anthropic Claude API.
+A lightweight proxy server for the Anthropic Claude API
 
 ## Overview
 

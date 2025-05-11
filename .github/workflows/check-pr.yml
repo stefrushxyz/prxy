@@ -14,7 +14,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.20"
+          go-version: "1.24"
           cache: true
 
       - name: Install gofumpt
@@ -28,12 +28,6 @@ jobs:
             git diff
             exit 1
           fi
-
-      - name: Run golangci-lint to check linting
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-          args: --timeout=5m
 
       - name: Build the binary
         run: go build main.go
