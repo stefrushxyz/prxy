@@ -36,14 +36,13 @@ const securityGroup = new aws.ec2.SecurityGroup("prxy-sg", {
       cidrBlocks: ["0.0.0.0/0"],
       description: "PRXY server access",
     },
-    // Allow SSH access only from within the VPC (for EC2 Instance Connect)
+    // Allow SSH access from anywhere
     {
       protocol: "tcp",
       fromPort: 22,
       toPort: 22,
-      cidrBlocks: [vpc.vpc.cidrBlock],
-      description:
-        "SSH access only from within the VPC (for EC2 Instance Connect)",
+      cidrBlocks: ["0.0.0.0/0"],
+      description: "SSH access from anywhere",
     },
   ],
   egress: [
