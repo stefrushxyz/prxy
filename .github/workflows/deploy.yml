@@ -138,14 +138,36 @@ jobs:
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
 
+      - name: Trigger container update on EC2
+        if: success()
+        run: |
+          # Get instance ID from Pulumi output
+          cd ./infra
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Project,Values=PRXY" --query "Reservations[*].Instances[*].InstanceId" --output text)
+
+          if [ -n "$INSTANCE_ID" ]; then
+            echo "Found EC2 instance: $INSTANCE_ID, triggering update..."
+            
+            # Run update command via SSM
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters commands="/home/ubuntu/prxy/update.sh ${{ secrets.S3_BUCKET }} ${{ needs.build-and-push.outputs.repo-url }} ${{ github.sha }}" \
+              --comment "Update PRXY container"
+            
+            echo "Update command sent. Container will be updated shortly."
+          else
+            echo "EC2 instance not found. It may be creating for the first time."
+          fi
+
       - name: Output deployment information
         if: success()
         working-directory: ./infra
         run: |
           echo "Deployment successful!"
-          ENDPOINT=$(pulumi stack output endpoint || echo "No endpoint output defined")
-          if [ ! -z "$ENDPOINT" ] && [ "$ENDPOINT" != "No endpoint output defined" ]; then
-            echo "Application is available at: $ENDPOINT"
-          fi
+          ENDPOINT=$(pulumi stack output endpoint)
+          echo "Application is available at: $ENDPOINT"
+          echo "Deployed image tag: $(pulumi stack output deployedImageTag)"
+          echo "Deployed at: $(pulumi stack output deployedAt)"
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
