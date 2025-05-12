@@ -462,8 +462,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 			if err != io.EOF {
 				logError("[%s] Error reading from Claude API: %v", requestID, err)
 			} else {
-				logInfo("[%s] Finished streaming response: %d bytes in %v",
-					requestID, bytesStreamed, time.Since(streamStart))
+				logRequest(requestID, "Finished streaming response: %d bytes in %v", bytesStreamed, time.Since(streamStart))
 			}
 			break
 		}
