@@ -230,7 +230,8 @@ else
     -addext "subjectAltName = IP:$PUBLIC_IP"
   
   # Configure Nginx to use the self-signed certificate
-  sed -i "s## SSL configuration will be added by Certbot#ssl_certificate /etc/ssl/prxy/prxy.crt;\n    ssl_certificate_key /etc/ssl/prxy/prxy.key;#" /etc/nginx/sites-available/prxy
+  sed -i 's/# SSL configuration will be added by Certbot/ssl_certificate \/etc\/ssl\/prxy\/prxy.crt;/' /etc/nginx/sites-available/prxy
+  sed -i '/ssl_certificate \/etc\/ssl\/prxy\/prxy.crt;/a \    ssl_certificate_key \/etc\/ssl\/prxy\/prxy.key;' /etc/nginx/sites-available/prxy
 fi
 
 # Restart Nginx to apply changes
