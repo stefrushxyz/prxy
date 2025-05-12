@@ -152,7 +152,7 @@ echo "Checking for updates at $(date)" >> $LOG_FILE
 
 # Check if the update trigger file exists in S3
 if aws s3 ls s3://$S3_BUCKET/update-trigger.txt &>/dev/null; then
-  echo "Found update trigger at $(date)" >> $LOG_FILE
+  echo "Found update trigger" >> $LOG_FILE
   
   # Get the content of the trigger file (should be ECR_REPO_URL:IMAGE_TAG)
   aws s3 cp s3://$S3_BUCKET/update-trigger.txt /home/ubuntu/prxy/update-trigger.txt
@@ -173,14 +173,19 @@ if aws s3 ls s3://$S3_BUCKET/update-trigger.txt &>/dev/null; then
   
   # Pull and run the container
   docker pull $ECR_REPO_URL:$IMAGE_TAG
-  docker rm -f prxy 2>/dev/null || true
-  docker run -d -p 3000:3000 --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
+  if docker ps -q --filter "name=prxy" | grep -q .; then
+    docker restart prxy
+  else
+    docker run -d -p 3000:3000 --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
+  fi
   
   # Remove the update trigger file from S3 after successful update
   aws s3 rm s3://$S3_BUCKET/update-trigger.txt
   echo "Update trigger removed from S3" >> $LOG_FILE
   
   echo "Update completed at $(date)" >> $LOG_FILE
+else
+  echo "No update trigger found" >> $LOG_FILE
 fi
 EOL
 
