@@ -139,6 +139,9 @@ sudo apt-get install -y docker.io awscli nginx certbot python3-certbot-nginx
 sudo systemctl start docker
 sudo systemctl enable docker
 
+# Add ubuntu user to the docker group
+sudo usermod -aG docker ubuntu
+
 # Create directory for application files
 mkdir -p /home/ubuntu/prxy
 touch /home/ubuntu/prxy/update.log
@@ -250,6 +253,22 @@ fi
 
 echo "Starting update checker with interval $INTERVAL seconds" >> $LOG_FILE
 
+# Ensure Docker access is available
+MAX_RETRIES=30
+RETRY_COUNT=0
+while ! docker info &>/dev/null && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  echo "Waiting for Docker access to be available... ($(($RETRY_COUNT+1))/$MAX_RETRIES)" >> $LOG_FILE
+  RETRY_COUNT=$((RETRY_COUNT+1))
+  sleep 5
+done
+
+if ! docker info &>/dev/null; then
+  echo "Failed to get Docker access after $MAX_RETRIES attempts. Please check permissions." >> $LOG_FILE
+  echo "Adding user to docker group and refreshing groups..." >> $LOG_FILE
+  # Try to add the user to the docker group and refresh permissions
+  sudo usermod -aG docker ubuntu && newgrp docker
+fi
+
 # Create empty prxy.env file if it doesn't exist
 if [ ! -f "/home/ubuntu/prxy/prxy.env" ]; then
   touch /home/ubuntu/prxy/prxy.env
@@ -330,13 +349,15 @@ chmod 644 /home/ubuntu/prxy/update.log
 cat > /etc/systemd/system/prxy-updater.service << EOL
 [Unit]
 Description=PRXY Updater
-After=network.target
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
 Type=simple
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/prxy
+# Remove ownership changes from ExecStartPre since we do it during initial setup
 ExecStartPre=/bin/mkdir -p /home/ubuntu/prxy
 ExecStart=/home/ubuntu/prxy/update.sh ${s3Bucket} ${updateInterval}
 Restart=always
