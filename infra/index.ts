@@ -147,13 +147,13 @@ mkdir -p /home/ubuntu/prxy
 touch /home/ubuntu/prxy/update.log
 
 # Configure Nginx as a reverse proxy with SSL
-cat > /etc/nginx/sites-available/prxy << EOF
+cat > /etc/nginx/sites-available/prxy << 'EOFNGINX'
 server {
     listen 80;
     server_name _;
 
     location / {
-        return 301 https://\$host\$request_uri;
+        return 301 https://$host$request_uri;
     }
 }
 
@@ -164,18 +164,21 @@ server {
     # SSL configuration will be added by setup-ssl.sh
 
     location / {
-        proxy_pass http://localhost:${port};
+        proxy_pass http://localhost:PORT_PLACEHOLDER;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
     }
 }
-EOF
+EOFNGINX
+
+# Replace the port placeholder with the actual port
+sed -i "s/PORT_PLACEHOLDER/${port}/g" /etc/nginx/sites-available/prxy
 
 # Enable the Nginx site
 ln -s /etc/nginx/sites-available/prxy /etc/nginx/sites-enabled/
@@ -230,13 +233,13 @@ else
     -addext "subjectAltName = IP:$PUBLIC_IP"
   
   # Create a new Nginx config file directly instead of using sed
-  cat > /etc/nginx/sites-available/prxy << EOF
+  cat > /etc/nginx/sites-available/prxy << 'EOFNGINX'
 server {
     listen 80;
     server_name _;
 
     location / {
-        return 301 https://\$host\$request_uri;
+        return 301 https://$host$request_uri;
     }
 }
 
@@ -248,18 +251,21 @@ server {
     ssl_certificate_key /etc/ssl/prxy/prxy.key;
 
     location / {
-        proxy_pass http://localhost:${port};
+        proxy_pass http://localhost:PORT_PLACEHOLDER;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
     }
 }
-EOF
+EOFNGINX
+
+  # Replace the port placeholder with the actual port
+  sed -i "s/PORT_PLACEHOLDER/${port}/g" /etc/nginx/sites-available/prxy
 fi
 
 # Restart Nginx to apply changes
@@ -308,7 +314,7 @@ if aws s3 ls s3://$S3_BUCKET/domain.txt &>/dev/null; then
   echo "Found domain configuration file, downloading" >> $LOG_FILE
   aws s3 cp s3://$S3_BUCKET/domain.txt /home/ubuntu/prxy/domain.txt
   # Run the SSL setup script to reconfigure with the domain if needed
-  /home/ubuntu/prxy/setup-ssl.sh
+  sudo ./prxy/setup-ssl.sh
 fi
 
 while true; do
@@ -418,10 +424,10 @@ WantedBy=multi-user.target
 EOL
 
 // Enable the PRXY service to start on boot
-sudo systemctl enable prxy.service
+systemctl enable prxy.service
 
 // Run the SSL setup script
-/home/ubuntu/prxy/setup-ssl.sh
+sudo ./prxy/setup-ssl.sh
 
 // Start Nginx
 systemctl enable nginx
