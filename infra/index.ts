@@ -247,7 +247,7 @@ const elasticIp = new aws.ec2.Eip(`${projectName}-eip`, {
   },
 });
 
-// Export the public IP of the instance
+// Export deployment details
 export const publicIp = elasticIp.publicIp;
 export const endpoint = pulumi.interpolate`http://${elasticIp.publicIp}:${port}`;
 export const deployedImageTag = imageTag;
