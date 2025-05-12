@@ -142,9 +142,6 @@ sudo systemctl enable docker
 # Create directory for application files
 mkdir -p /home/ubuntu/prxy
 touch /home/ubuntu/prxy/update.log
-chown -R ubuntu:ubuntu /home/ubuntu/prxy
-chmod 755 /home/ubuntu/prxy
-chmod 644 /home/ubuntu/prxy/update.log
 
 # Configure Nginx as a reverse proxy with SSL
 cat > /etc/nginx/sites-available/prxy << 'EOL'
@@ -249,7 +246,6 @@ LOG_FILE="/home/ubuntu/prxy/update.log"
 # Ensure proper permissions
 if [ ! -f "$LOG_FILE" ]; then
   touch "$LOG_FILE"
-  chmod 644 "$LOG_FILE"
 fi
 
 echo "Starting update checker with interval $INTERVAL seconds" >> $LOG_FILE
@@ -257,14 +253,12 @@ echo "Starting update checker with interval $INTERVAL seconds" >> $LOG_FILE
 # Create empty prxy.env file if it doesn't exist
 if [ ! -f "/home/ubuntu/prxy/prxy.env" ]; then
   touch /home/ubuntu/prxy/prxy.env
-  chmod 644 /home/ubuntu/prxy/prxy.env
 fi
 
 # Check for a domain config file in S3 and download it if it exists
 if aws s3 ls s3://$S3_BUCKET/domain.txt &>/dev/null; then
   echo "Found domain configuration file, downloading" >> $LOG_FILE
   aws s3 cp s3://$S3_BUCKET/domain.txt /home/ubuntu/prxy/domain.txt
-  chmod 644 /home/ubuntu/prxy/domain.txt
   # Run the SSL setup script to reconfigure with the domain if needed
   /home/ubuntu/prxy/setup-ssl.sh
 fi
@@ -278,7 +272,6 @@ while true; do
     
     # Get the content of the trigger file (should be ECR_REPO_URL:IMAGE_TAG)
     aws s3 cp s3://$S3_BUCKET/update-trigger.txt /home/ubuntu/prxy/update-trigger.txt
-    chmod 644 /home/ubuntu/prxy/update-trigger.txt
     
     if [ -f "/home/ubuntu/prxy/update-trigger.txt" ]; then
       TRIGGER_CONTENT=$(cat /home/ubuntu/prxy/update-trigger.txt)
@@ -291,13 +284,11 @@ while true; do
       
       # Get the environment file from S3
       aws s3 cp s3://$S3_BUCKET/prxy.env /home/ubuntu/prxy/prxy.env || touch /home/ubuntu/prxy/prxy.env
-      chmod 644 /home/ubuntu/prxy/prxy.env
       
       # Check again for a domain config file in S3 and download it if it exists
       if aws s3 ls s3://$S3_BUCKET/domain.txt &>/dev/null; then
         echo "Found domain configuration file, downloading" >> $LOG_FILE
         aws s3 cp s3://$S3_BUCKET/domain.txt /home/ubuntu/prxy/domain.txt
-        chmod 644 /home/ubuntu/prxy/domain.txt
       fi
       
       # Get the ECR login token
@@ -330,6 +321,11 @@ EOL
 // Make the update script executable
 chmod +x /home/ubuntu/prxy/update.sh
 
+// Set proper ownership for all files
+chown -R ubuntu:ubuntu /home/ubuntu/prxy
+chmod 755 /home/ubuntu/prxy
+chmod 644 /home/ubuntu/prxy/update.log
+
 // Create a systemd service for the updater
 cat > /etc/systemd/system/prxy-updater.service << EOL
 [Unit]
@@ -342,8 +338,6 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/prxy
 ExecStartPre=/bin/mkdir -p /home/ubuntu/prxy
-ExecStartPre=/bin/chown -R ubuntu:ubuntu /home/ubuntu/prxy
-ExecStartPre=/bin/chmod 755 /home/ubuntu/prxy
 ExecStart=/home/ubuntu/prxy/update.sh ${s3Bucket} ${updateInterval}
 Restart=always
 RestartSec=3
