@@ -80,7 +80,7 @@ const ec2Role = new aws.iam.Role("prxy-ec2-role", {
 });
 
 // Attach policies for ECR access
-const ecrPolicy = new aws.iam.RolePolicy("prxy-ecr-inline-policy", {
+const ecrPolicy = new aws.iam.RolePolicy("prxy-ecr-policy", {
   role: ec2Role.id,
   policy: JSON.stringify({
     Version: "2012-10-17",
@@ -178,6 +178,7 @@ if aws s3 ls s3://$S3_BUCKET/update-trigger.txt &>/dev/null; then
   
   # Remove the update trigger file from S3 after successful update
   aws s3 rm s3://$S3_BUCKET/update-trigger.txt
+  echo "Update trigger removed from S3" >> $LOG_FILE
   
   echo "Update completed at $(date)" >> $LOG_FILE
 fi
@@ -186,8 +187,7 @@ EOL
 chmod +x /home/ubuntu/prxy/update.sh
 
 # Setup cron job to run the update script every minute
-echo "*/1 * * * * /home/ubuntu/prxy/update.sh ${s3Bucket}" > /etc/cron.d/prxy-update
-chmod 0644 /etc/cron.d/prxy-update
+echo "*/1 * * * * /home/ubuntu/prxy/update.sh ${s3Bucket}" | crontab -
 
 # Setup a service to restart the container on reboot
 cat > /etc/systemd/system/prxy.service << EOL
