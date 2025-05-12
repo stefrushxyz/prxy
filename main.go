@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -182,8 +184,14 @@ func main() {
 // loggingMiddleware is a middleware for logging requests
 func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Generate request ID
-		requestID := fmt.Sprintf("%d", time.Now().UnixNano())
+		// Generate random request ID (7-character hex format)
+		randomBytes := make([]byte, 4)
+		_, err := rand.Read(randomBytes)
+		requestID := hex.EncodeToString(randomBytes)[:7]
+		if err != nil {
+			// Fallback to timestamp if random generation fails
+			requestID = fmt.Sprintf("%d", time.Now().UnixNano())
+		}
 
 		// Create a new context with the request ID
 		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
