@@ -6,9 +6,12 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_NAME: prxy
-  AWS_REGION: us-east-1
-  EC2_INSTANCE_TYPE: t3.micro
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'prxy' }}
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  EC2_INSTANCE_TYPE: ${{ vars.EC2_INSTANCE_TYPE || 't3.micro' }}
+  UPDATE_INTERVAL: ${{ vars.UPDATE_INTERVAL || '*/1 * * * *' }}
+  S3_BUCKET: ${{ vars.PROJECT_NAME || 'prxy' }}-s3-env
+  PORT: ${{ vars.PORT || '3000' }}
 
 jobs:
   build-and-push:
@@ -58,8 +61,8 @@ jobs:
       - name: Check required secrets
         id: check_secrets
         run: |
-          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] || [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] || [ -z "${{ secrets.PULUMI_ACCESS_TOKEN }}" ] || [ -z "${{ secrets.S3_BUCKET }}" ] || [ -z "${{ secrets.ALLOWED_API_KEYS }}" ]; then
-            echo "Required secrets are missing. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, PULUMI_ACCESS_TOKEN, S3_BUCKET, and ALLOWED_API_KEYS secrets."
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] || [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] || [ -z "${{ secrets.PULUMI_ACCESS_TOKEN }}" ] || [ -z "${{ secrets.ALLOWED_API_KEYS }}" ]; then
+            echo "Required secrets are missing. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, PULUMI_ACCESS_TOKEN, and ALLOWED_API_KEYS secrets."
             exit 1
           fi
 
@@ -83,8 +86,8 @@ jobs:
 
       - name: Create S3 bucket if it doesn't exist
         run: |
-          aws s3api head-bucket --bucket ${{ secrets.S3_BUCKET }} 2>/dev/null || \
-          aws s3 mb s3://${{ secrets.S3_BUCKET }}
+          aws s3api head-bucket --bucket ${{ env.S3_BUCKET }} 2>/dev/null || \
+          aws s3 mb s3://${{ env.S3_BUCKET }}
 
       - name: Install dependencies
         working-directory: ./infra
@@ -93,14 +96,6 @@ jobs:
       - name: Setup Pulumi configuration
         working-directory: ./infra
         run: |
-          # Get ECR Repository URL from the previous job or re-derive if needed
-          ECR_REPO_URL="${{ needs.build-and-push.outputs.repo-url }}"
-
-          # Fallback: If the output isn't available, get from AWS again
-          if [ -z "$ECR_REPO_URL" ]; then
-            ECR_REPO_URL=$(aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }} --query 'repositories[0].repositoryUri' --output text)
-          fi
-
           # Setup Pulumi stack
           pulumi stack select dev --create
 
@@ -108,8 +103,7 @@ jobs:
           pulumi config set PROJECT_NAME ${{ env.PROJECT_NAME }}
           pulumi config set aws:region ${{ env.AWS_REGION }}
           pulumi config set EC2_INSTANCE_TYPE ${{ env.EC2_INSTANCE_TYPE }}
-          pulumi config set ECR_REPO_URL "$ECR_REPO_URL"
-          pulumi config set S3_BUCKET ${{ secrets.S3_BUCKET }}
+          pulumi config set UPDATE_INTERVAL ${{ env.UPDATE_INTERVAL }}
           pulumi config set IMAGE_TAG ${{ github.sha }}
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
@@ -117,11 +111,11 @@ jobs:
       - name: Create EC2 environment file
         run: |
           cat > prxy.env << EOL
-          PORT=3000
+          PORT=$PORT
           CLAUDE_API_URL=https://api.anthropic.com
           ALLOWED_API_KEYS=${{ secrets.ALLOWED_API_KEYS }}
           EOL
-          aws s3 cp prxy.env s3://${{ secrets.S3_BUCKET }}/prxy.env
+          aws s3 cp prxy.env s3://${{ env.S3_BUCKET }}/prxy.env
 
       - name: Deploy with Pulumi
         id: pulumi-deploy
@@ -135,7 +129,7 @@ jobs:
           if [ $PULUMI_EXIT_CODE -ne 0 ]; then
             echo "Pulumi deployment failed with exit code $PULUMI_EXIT_CODE"
             pulumi stack export > pulumi-failed-state.json
-            aws s3 cp pulumi-failed-state.json s3://${{ secrets.S3_BUCKET }}/pulumi-failed-state-$(date +%Y%m%d%H%M%S).json
+            aws s3 cp pulumi-failed-state.json s3://${{ env.S3_BUCKET }}/pulumi-failed-state-$(date +%Y%m%d%H%M%S).json
             exit $PULUMI_EXIT_CODE
           fi
         env:
@@ -153,7 +147,7 @@ jobs:
             
             # Create a trigger file in S3 that the EC2 instance will poll for
             echo "${{ needs.build-and-push.outputs.repo-url }}:${{ github.sha }}" > update-trigger.txt
-            aws s3 cp update-trigger.txt s3://${{ secrets.S3_BUCKET }}/update-trigger.txt
+            aws s3 cp update-trigger.txt s3://${{ env.S3_BUCKET }}/update-trigger.txt
             
             echo "Created update trigger in S3 bucket. Instance will pull updates on next cron cycle."
           else

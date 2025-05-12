@@ -6,13 +6,13 @@ import * as awsx from "@pulumi/awsx";
 const config = new pulumi.Config();
 const projectName = config.get("PROJECT_NAME") || "prxy";
 const ec2InstanceType = config.get("EC2_INSTANCE_TYPE") || "t3.micro";
-const ecrRepoUrl = config.require("ECR_REPO_URL");
-const s3Bucket = config.require("S3_BUCKET");
+const updateInterval = config.get("UPDATE_INTERVAL") || "*/1 * * * *";
 const imageTag = config.get("IMAGE_TAG") || "latest";
+const s3Bucket = `${projectName}-s3-env`;
 const deploymentTimestamp = Date.now();
 
 // Create a new VPC
-const vpc = new awsx.ec2.Vpc("prxy-vpc", {
+const vpc = new awsx.ec2.Vpc(`${projectName}-vpc`, {
   cidrBlock: "10.0.0.0/16",
   numberOfAvailabilityZones: 1,
   natGateways: {
@@ -24,11 +24,11 @@ const vpc = new awsx.ec2.Vpc("prxy-vpc", {
 });
 
 // Create a security group for the EC2 instance
-const securityGroup = new aws.ec2.SecurityGroup("prxy-sg", {
+const securityGroup = new aws.ec2.SecurityGroup(`${projectName}-sg`, {
   vpcId: vpc.vpcId,
   description: "Security group for PRXY server",
   ingress: [
-    // Allow HTTP access to the proxy server (port 3000)
+    // Allow HTTP access from anywhere
     {
       protocol: "tcp",
       fromPort: 3000,
@@ -61,7 +61,7 @@ const securityGroup = new aws.ec2.SecurityGroup("prxy-sg", {
 });
 
 // Create an IAM role for the EC2 instance
-const ec2Role = new aws.iam.Role("prxy-ec2-role", {
+const ec2Role = new aws.iam.Role(`${projectName}-ec2-role`, {
   assumeRolePolicy: JSON.stringify({
     Version: "2012-10-17",
     Statement: [
@@ -80,7 +80,7 @@ const ec2Role = new aws.iam.Role("prxy-ec2-role", {
 });
 
 // Attach policies for ECR access
-const ecrPolicy = new aws.iam.RolePolicy("prxy-ecr-policy", {
+const ecrPolicy = new aws.iam.RolePolicy(`${projectName}-ecr-policy`, {
   role: ec2Role.id,
   policy: JSON.stringify({
     Version: "2012-10-17",
@@ -95,7 +95,7 @@ const ecrPolicy = new aws.iam.RolePolicy("prxy-ecr-policy", {
 });
 
 // Attach policies for S3 access
-const s3Policy = new aws.iam.RolePolicy("prxy-s3-policy", {
+const s3Policy = new aws.iam.RolePolicy(`${projectName}-s3-policy`, {
   role: ec2Role.id,
   policy: JSON.stringify({
     Version: "2012-10-17",
@@ -110,12 +110,15 @@ const s3Policy = new aws.iam.RolePolicy("prxy-s3-policy", {
 });
 
 // Create an instance profile
-const instanceProfile = new aws.iam.InstanceProfile("prxy-instance-profile", {
-  role: ec2Role.name,
-  tags: {
-    Project: projectName,
-  },
-});
+const instanceProfile = new aws.iam.InstanceProfile(
+  `${projectName}-instance-profile`,
+  {
+    role: ec2Role.name,
+    tags: {
+      Project: projectName,
+    },
+  }
+);
 
 // User data script to install Docker and run the container
 const userData = pulumi.interpolate`#!/bin/bash
@@ -129,18 +132,6 @@ sudo systemctl enable docker
 
 # Create directory for application files
 mkdir -p /home/ubuntu/prxy
-
-# Get the environment file from S3
-aws s3 cp s3://${s3Bucket}/prxy.env /home/ubuntu/prxy/prxy.env
-
-# Get the ECR login token
-aws ecr get-login-password --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) | \
-  docker login --username AWS --password-stdin ${ecrRepoUrl}
-
-# Pull and run the container
-docker pull ${ecrRepoUrl}:latest
-docker rm -f prxy 2>/dev/null || true
-docker run -d -p 3000:3000 --env-file /home/ubuntu/prxy/prxy.env --name prxy ${ecrRepoUrl}:latest
 
 # Create update script
 cat > /home/ubuntu/prxy/update.sh << 'EOL'
@@ -186,10 +177,11 @@ else
 fi
 EOL
 
+# Make the update script executable
 chmod +x /home/ubuntu/prxy/update.sh
 
-# Setup cron job to run the update script every minute
-echo "*/1 * * * * /home/ubuntu/prxy/update.sh ${s3Bucket}" | crontab -
+# Setup cron job to run the update script at the configured interval
+echo "${updateInterval} /home/ubuntu/prxy/update.sh ${s3Bucket}" | crontab -
 
 # Setup a service to restart the container on reboot
 cat > /etc/systemd/system/prxy.service << EOL
@@ -208,11 +200,12 @@ ExecStop=/usr/bin/docker stop prxy
 WantedBy=multi-user.target
 EOL
 
+# Enable the service to start on boot
 sudo systemctl enable prxy.service
 `;
 
 // Create an EC2 instance
-const instance = new aws.ec2.Instance("prxy-ec2-instance", {
+const instance = new aws.ec2.Instance(`${projectName}-ec2-instance`, {
   ami: aws.ec2.getAmiOutput({
     mostRecent: true,
     owners: ["099720109477"], // Canonical (Ubuntu)
@@ -238,11 +231,11 @@ const instance = new aws.ec2.Instance("prxy-ec2-instance", {
 });
 
 // Create an Elastic IP for the instance
-const elasticIp = new aws.ec2.Eip("prxy-eip", {
+const elasticIp = new aws.ec2.Eip(`${projectName}-eip`, {
   instance: instance.id,
   domain: "vpc",
   tags: {
-    Name: "prxy-eip",
+    Name: `${projectName}-eip`,
     Project: projectName,
   },
 });
