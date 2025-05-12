@@ -41,7 +41,7 @@ You can also configure these optional variables:
 - `PROJECT_NAME`: Name for your project (default: 'prxy')
 - `AWS_REGION`: AWS region to deploy to (default: 'us-east-1')
 - `EC2_INSTANCE_TYPE`: EC2 instance type to use (default: 't3.micro')
-- `UPDATE_INTERVAL`: Cron schedule for update checks (default: '\*/1 \* \* \* \*')
+- `UPDATE_INTERVAL`: Seconds between update checks (default: '10')
 - `PORT`: Port to expose the server on (default: '3000')
 
 ## Manual Deployment

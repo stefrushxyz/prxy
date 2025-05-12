@@ -6,7 +6,7 @@ import * as awsx from "@pulumi/awsx";
 const config = new pulumi.Config();
 const projectName = config.get("PROJECT_NAME") || "prxy";
 const ec2InstanceType = config.get("EC2_INSTANCE_TYPE") || "t3.micro";
-const updateInterval = config.get("UPDATE_INTERVAL") || "*/1 * * * *";
+const updateInterval = config.get("UPDATE_INTERVAL") || "10";
 const port = config.get("PORT") || "3000";
 const imageTag = config.get("IMAGE_TAG") || "latest";
 const s3Bucket = `${projectName}-s3-env`;
@@ -138,51 +138,76 @@ mkdir -p /home/ubuntu/prxy
 cat > /home/ubuntu/prxy/update.sh << 'EOL'
 #!/bin/bash
 S3_BUCKET=$1
+INTERVAL=$2
 LOG_FILE="/home/ubuntu/prxy/update.log"
 
-echo "Checking for updates at $(date)" >> $LOG_FILE
+echo "Starting update checker with interval $INTERVAL seconds" >> $LOG_FILE
 
-# Check if the update trigger file exists in S3
-if aws s3 ls s3://$S3_BUCKET/update-trigger.txt &>/dev/null; then
-  echo "Found update trigger" >> $LOG_FILE
+while true; do
+  echo "Checking for updates at $(date)" >> $LOG_FILE
+
+  # Check if the update trigger file exists in S3
+  if aws s3 ls s3://$S3_BUCKET/update-trigger.txt &>/dev/null; then
+    echo "Found update trigger" >> $LOG_FILE
+    
+    # Get the content of the trigger file (should be ECR_REPO_URL:IMAGE_TAG)
+    aws s3 cp s3://$S3_BUCKET/update-trigger.txt /home/ubuntu/prxy/update-trigger.txt
+    TRIGGER_CONTENT=$(cat /home/ubuntu/prxy/update-trigger.txt)
+    
+    # Parse the content
+    ECR_REPO_URL=$(echo $TRIGGER_CONTENT | cut -d':' -f1)
+    IMAGE_TAG=$(echo $TRIGGER_CONTENT | cut -d':' -f2)
+    
+    echo "Updating to $ECR_REPO_URL:$IMAGE_TAG" >> $LOG_FILE
+    
+    # Get the environment file from S3
+    aws s3 cp s3://$S3_BUCKET/prxy.env /home/ubuntu/prxy/prxy.env
+    
+    # Get the ECR login token
+    aws ecr get-login-password --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) | \
+      docker login --username AWS --password-stdin $ECR_REPO_URL
+    
+    # Pull and run the container
+    docker pull $ECR_REPO_URL:$IMAGE_TAG
+    docker rm -f prxy 2>/dev/null || true
+    docker run -d -p ${port}:${port} --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
+    
+    # Remove the update trigger file from S3 after successful update
+    aws s3 rm s3://$S3_BUCKET/update-trigger.txt
+    echo "Update trigger removed from S3" >> $LOG_FILE
+    
+    echo "Update completed at $(date)" >> $LOG_FILE
+  else
+    echo "No update trigger found" >> $LOG_FILE
+  fi
   
-  # Get the content of the trigger file (should be ECR_REPO_URL:IMAGE_TAG)
-  aws s3 cp s3://$S3_BUCKET/update-trigger.txt /home/ubuntu/prxy/update-trigger.txt
-  TRIGGER_CONTENT=$(cat /home/ubuntu/prxy/update-trigger.txt)
-  
-  # Parse the content
-  ECR_REPO_URL=$(echo $TRIGGER_CONTENT | cut -d':' -f1)
-  IMAGE_TAG=$(echo $TRIGGER_CONTENT | cut -d':' -f2)
-  
-  echo "Updating to $ECR_REPO_URL:$IMAGE_TAG" >> $LOG_FILE
-  
-  # Get the environment file from S3
-  aws s3 cp s3://$S3_BUCKET/prxy.env /home/ubuntu/prxy/prxy.env
-  
-  # Get the ECR login token
-  aws ecr get-login-password --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) | \
-    docker login --username AWS --password-stdin $ECR_REPO_URL
-  
-  # Pull and run the container
-  docker pull $ECR_REPO_URL:$IMAGE_TAG
-  docker rm -f prxy 2>/dev/null || true
-  docker run -d -p ${port}:${port} --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
-  
-  # Remove the update trigger file from S3 after successful update
-  aws s3 rm s3://$S3_BUCKET/update-trigger.txt
-  echo "Update trigger removed from S3" >> $LOG_FILE
-  
-  echo "Update completed at $(date)" >> $LOG_FILE
-else
-  echo "No update trigger found" >> $LOG_FILE
-fi
+  sleep $INTERVAL
+done
 EOL
 
 # Make the update script executable
 chmod +x /home/ubuntu/prxy/update.sh
 
-# Setup cron job to run the update script at the configured interval
-echo "${updateInterval} /home/ubuntu/prxy/update.sh ${s3Bucket}" | crontab -
+# Create a systemd service for the updater
+cat > /etc/systemd/system/prxy-updater.service << EOL
+[Unit]
+Description=PRXY Updater
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/prxy/update.sh ${s3Bucket} ${updateInterval}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOL
+
+# Enable and start the updater service
+systemctl enable prxy-updater.service
+systemctl start prxy-updater.service
 
 # Setup a service to restart the container on reboot
 cat > /etc/systemd/system/prxy.service << EOL
@@ -201,7 +226,7 @@ ExecStop=/usr/bin/docker stop prxy
 WantedBy=multi-user.target
 EOL
 
-# Enable the service to start on boot
+# Enable the PRXY service to start on boot
 sudo systemctl enable prxy.service
 `;
 
