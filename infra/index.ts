@@ -173,11 +173,8 @@ if aws s3 ls s3://$S3_BUCKET/update-trigger.txt &>/dev/null; then
   
   # Pull and run the container
   docker pull $ECR_REPO_URL:$IMAGE_TAG
-  if docker ps -q --filter "name=prxy" | grep -q .; then
-    docker restart prxy
-  else
-    docker run -d -p 3000:3000 --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
-  fi
+  docker rm -f prxy 2>/dev/null || true
+  docker run -d -p 3000:3000 --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
   
   # Remove the update trigger file from S3 after successful update
   aws s3 rm s3://$S3_BUCKET/update-trigger.txt
