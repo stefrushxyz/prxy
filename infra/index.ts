@@ -203,7 +203,7 @@ EOL
 chmod +x /home/ubuntu/prxy/renew-ssl.sh
 
 # Add a cron job to run the renewal script twice a day
-(crontab -l 2>/dev/null; echo "0 0,12 * * * /home/ubuntu/prxy/renew-ssl.sh") | crontab -
+echo "0 0,12 * * * /home/ubuntu/prxy/renew-ssl.sh" | crontab -
 
 # Create a script to set up initial SSL certificate
 cat > /home/ubuntu/prxy/setup-ssl.sh << 'EOL'
@@ -230,7 +230,7 @@ else
     -addext "subjectAltName = IP:$PUBLIC_IP"
   
   # Configure Nginx to use the self-signed certificate
-  sed -i "s/# SSL configuration will be added by Certbot/ssl_certificate \/etc\/ssl\/prxy\/prxy.crt;\n    ssl_certificate_key \/etc\/ssl\/prxy\/prxy.key;/" /etc/nginx/sites-available/prxy
+  sed -i "s## SSL configuration will be added by Certbot#ssl_certificate /etc/ssl/prxy/prxy.crt;\n    ssl_certificate_key /etc/ssl/prxy/prxy.key;#" /etc/nginx/sites-available/prxy
 fi
 
 # Restart Nginx to apply changes
