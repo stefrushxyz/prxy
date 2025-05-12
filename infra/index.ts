@@ -7,6 +7,7 @@ const config = new pulumi.Config();
 const projectName = config.get("PROJECT_NAME") || "prxy";
 const ec2InstanceType = config.get("EC2_INSTANCE_TYPE") || "t3.micro";
 const updateInterval = config.get("UPDATE_INTERVAL") || "*/1 * * * *";
+const port = config.get("PORT") || "3000";
 const imageTag = config.get("IMAGE_TAG") || "latest";
 const s3Bucket = `${projectName}-s3-env`;
 const deploymentTimestamp = Date.now();
@@ -165,7 +166,7 @@ if aws s3 ls s3://$S3_BUCKET/update-trigger.txt &>/dev/null; then
   # Pull and run the container
   docker pull $ECR_REPO_URL:$IMAGE_TAG
   docker rm -f prxy 2>/dev/null || true
-  docker run -d -p 3000:3000 --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
+  docker run -d -p ${port}:${port} --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
   
   # Remove the update trigger file from S3 after successful update
   aws s3 rm s3://$S3_BUCKET/update-trigger.txt

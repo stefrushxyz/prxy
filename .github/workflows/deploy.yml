@@ -10,8 +10,8 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   EC2_INSTANCE_TYPE: ${{ vars.EC2_INSTANCE_TYPE || 't3.micro' }}
   UPDATE_INTERVAL: ${{ vars.UPDATE_INTERVAL || '*/1 * * * *' }}
-  S3_BUCKET: ${{ vars.PROJECT_NAME || 'prxy' }}-s3-env
   PORT: ${{ vars.PORT || '3000' }}
+  S3_BUCKET: ${{ vars.PROJECT_NAME || 'prxy' }}-s3-env
 
 jobs:
   build-and-push:
@@ -104,6 +104,7 @@ jobs:
           pulumi config set aws:region ${{ env.AWS_REGION }}
           pulumi config set EC2_INSTANCE_TYPE ${{ env.EC2_INSTANCE_TYPE }}
           pulumi config set UPDATE_INTERVAL "${{ env.UPDATE_INTERVAL }}"
+          pulumi config set PORT ${{ env.PORT }}
           pulumi config set IMAGE_TAG ${{ github.sha }}
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
@@ -159,9 +160,22 @@ jobs:
         working-directory: ./infra
         run: |
           echo "Deployment successful!"
-          ENDPOINT=$(pulumi stack output endpoint)
-          echo "Application is available at: $ENDPOINT"
-          echo "Deployed image tag: $(pulumi stack output deployedImageTag)"
-          echo "Deployed at: $(pulumi stack output deployedAt)"
+          echo "--------------------------------"
+          echo "Environment variables used:"
+          echo "--------------------------------"
+          echo "PROJECT_NAME: ${{ env.PROJECT_NAME }}"
+          echo "AWS_REGION: ${{ env.AWS_REGION }}"
+          echo "EC2_INSTANCE_TYPE: ${{ env.EC2_INSTANCE_TYPE }}"
+          echo "UPDATE_INTERVAL: ${{ env.UPDATE_INTERVAL }}"
+          echo "PORT: ${{ env.PORT }}"
+          echo "S3_BUCKET: ${{ env.S3_BUCKET }}"
+          echo "--------------------------------"
+          echo "Pulumi stack output:"
+          echo "--------------------------------"
+          echo "publicIp: $(pulumi stack output publicIp)"
+          echo "endpoint: $(pulumi stack output endpoint)"
+          echo "deployedImageTag: $(pulumi stack output deployedImageTag)"
+          echo "deployedAt: $(pulumi stack output deployedAt)"
+          echo "--------------------------------"
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
