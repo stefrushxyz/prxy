@@ -309,9 +309,8 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// For the Claude API, we need to ensure stream parameter matches what the client requested
+	// For non-streaming requests, ensure stream is set to false
 	if !streamRequested {
-		// For non-streaming requests, ensure stream is set to false
 		requestData["stream"] = false
 	}
 
