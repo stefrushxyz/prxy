@@ -32,8 +32,8 @@ const securityGroup = new aws.ec2.SecurityGroup(`${projectName}-sg`, {
     // Allow HTTP access from anywhere
     {
       protocol: "tcp",
-      fromPort: 3000,
-      toPort: 3000,
+      fromPort: Number.parseInt(port),
+      toPort: Number.parseInt(port),
       cidrBlocks: ["0.0.0.0/0"],
       description: "PRXY server access",
     },
@@ -249,6 +249,6 @@ const elasticIp = new aws.ec2.Eip(`${projectName}-eip`, {
 
 // Export the public IP of the instance
 export const publicIp = elasticIp.publicIp;
-export const endpoint = pulumi.interpolate`http://${elasticIp.publicIp}:3000`;
+export const endpoint = pulumi.interpolate`http://${elasticIp.publicIp}:${port}`;
 export const deployedImageTag = imageTag;
 export const deployedAt = deploymentTimestamp.toString();
