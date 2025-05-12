@@ -23,6 +23,7 @@ import (
 
 // Default values if environment variables are not set
 const (
+	name                    = "PRXY"
 	defaultPort             = "3000"
 	defaultClaudeURL        = "https://api.anthropic.com"
 	defaultAnthropicVersion = "2023-06-01"
@@ -44,6 +45,7 @@ const (
 	colorYellow = "\033[33m"
 	colorBlue   = "\033[34m"
 	colorPurple = "\033[35m"
+	colorCyan   = "\033[36m"
 )
 
 // Log type prefixes with colors
@@ -72,7 +74,7 @@ func logInfo(format string, v ...interface{}) {
 
 // logRequest logs request-related messages
 func logRequest(requestID, format string, v ...interface{}) {
-	log.Printf(prefixRequest+"[%s] "+format, append([]interface{}{requestID}, v...)...)
+	log.Printf(prefixRequest+"%s[%s]%s "+format, append([]interface{}{colorCyan, requestID, colorReset}, v...)...)
 }
 
 // logSystem logs system events
@@ -84,7 +86,7 @@ func logSystem(format string, v ...interface{}) {
 func main() {
 	// Configure logger with timestamp
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	logSystem("Starting Claude proxy server...")
+	logSystem("Starting %s...", name)
 
 	// Load environment variables from .env file
 	err := godotenv.Load()
@@ -149,7 +151,7 @@ func main() {
 
 	// Start the server in a goroutine
 	go func() {
-		logSystem("Claude proxy server running at http://localhost:%s", port)
+		logSystem("%s server running at http://localhost:%s", name, port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logError("Server error: %v", err)
 			cancel() // Cancel context to trigger shutdown
@@ -200,12 +202,12 @@ func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		r = r.WithContext(ctx)
 
 		startTime := time.Now()
-		logRequest(requestID, "→ %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+		logRequest(requestID, "%s→%s %s %s from %s", colorPurple, colorReset, r.Method, r.URL.Path, r.RemoteAddr)
 
 		next(w, r)
 
 		duration := time.Since(startTime)
-		logRequest(requestID, "← Completed in %v", duration)
+		logRequest(requestID, "%s←%s Completed in %v", colorGreen, colorReset, duration)
 	}
 }
 
