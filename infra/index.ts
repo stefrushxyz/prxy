@@ -141,6 +141,10 @@ sudo systemctl enable docker
 
 # Create directory for application files
 mkdir -p /home/ubuntu/prxy
+touch /home/ubuntu/prxy/update.log
+chown -R ubuntu:ubuntu /home/ubuntu/prxy
+chmod 755 /home/ubuntu/prxy
+chmod 644 /home/ubuntu/prxy/update.log
 
 # Configure Nginx as a reverse proxy with SSL
 cat > /etc/nginx/sites-available/prxy << 'EOL'
@@ -242,12 +246,25 @@ S3_BUCKET=$1
 INTERVAL=$2
 LOG_FILE="/home/ubuntu/prxy/update.log"
 
+# Ensure proper permissions
+if [ ! -f "$LOG_FILE" ]; then
+  touch "$LOG_FILE"
+  chmod 644 "$LOG_FILE"
+fi
+
 echo "Starting update checker with interval $INTERVAL seconds" >> $LOG_FILE
+
+# Create empty prxy.env file if it doesn't exist
+if [ ! -f "/home/ubuntu/prxy/prxy.env" ]; then
+  touch /home/ubuntu/prxy/prxy.env
+  chmod 644 /home/ubuntu/prxy/prxy.env
+fi
 
 # Check for a domain config file in S3 and download it if it exists
 if aws s3 ls s3://$S3_BUCKET/domain.txt &>/dev/null; then
   echo "Found domain configuration file, downloading" >> $LOG_FILE
   aws s3 cp s3://$S3_BUCKET/domain.txt /home/ubuntu/prxy/domain.txt
+  chmod 644 /home/ubuntu/prxy/domain.txt
   # Run the SSL setup script to reconfigure with the domain if needed
   /home/ubuntu/prxy/setup-ssl.sh
 fi
@@ -261,37 +278,47 @@ while true; do
     
     # Get the content of the trigger file (should be ECR_REPO_URL:IMAGE_TAG)
     aws s3 cp s3://$S3_BUCKET/update-trigger.txt /home/ubuntu/prxy/update-trigger.txt
-    TRIGGER_CONTENT=$(cat /home/ubuntu/prxy/update-trigger.txt)
+    chmod 644 /home/ubuntu/prxy/update-trigger.txt
     
-    # Parse the content
-    ECR_REPO_URL=$(echo $TRIGGER_CONTENT | cut -d':' -f1)
-    IMAGE_TAG=$(echo $TRIGGER_CONTENT | cut -d':' -f2)
-    
-    echo "Updating to $ECR_REPO_URL:$IMAGE_TAG" >> $LOG_FILE
-    
-    # Get the environment file from S3
-    aws s3 cp s3://$S3_BUCKET/prxy.env /home/ubuntu/prxy/prxy.env
-    
-    # Check again for a domain config file in S3 and download it if it exists
-    if aws s3 ls s3://$S3_BUCKET/domain.txt &>/dev/null; then
-      echo "Found domain configuration file, downloading" >> $LOG_FILE
-      aws s3 cp s3://$S3_BUCKET/domain.txt /home/ubuntu/prxy/domain.txt
+    if [ -f "/home/ubuntu/prxy/update-trigger.txt" ]; then
+      TRIGGER_CONTENT=$(cat /home/ubuntu/prxy/update-trigger.txt)
+      
+      # Parse the content
+      ECR_REPO_URL=$(echo $TRIGGER_CONTENT | cut -d':' -f1)
+      IMAGE_TAG=$(echo $TRIGGER_CONTENT | cut -d':' -f2)
+      
+      echo "Updating to $ECR_REPO_URL:$IMAGE_TAG" >> $LOG_FILE
+      
+      # Get the environment file from S3
+      aws s3 cp s3://$S3_BUCKET/prxy.env /home/ubuntu/prxy/prxy.env || touch /home/ubuntu/prxy/prxy.env
+      chmod 644 /home/ubuntu/prxy/prxy.env
+      
+      # Check again for a domain config file in S3 and download it if it exists
+      if aws s3 ls s3://$S3_BUCKET/domain.txt &>/dev/null; then
+        echo "Found domain configuration file, downloading" >> $LOG_FILE
+        aws s3 cp s3://$S3_BUCKET/domain.txt /home/ubuntu/prxy/domain.txt
+        chmod 644 /home/ubuntu/prxy/domain.txt
+      fi
+      
+      # Get the ECR login token
+      aws ecr get-login-password --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) | \
+        docker login --username AWS --password-stdin $ECR_REPO_URL
+      
+      # Pull and run the container
+      if [ -n "$ECR_REPO_URL" ] && [ -n "$IMAGE_TAG" ]; then
+        docker pull $ECR_REPO_URL:$IMAGE_TAG
+        docker rm -f prxy 2>/dev/null || true
+        docker run -d -p ${port}:${port} --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
+        
+        # Remove the update trigger file from S3 after successful update
+        aws s3 rm s3://$S3_BUCKET/update-trigger.txt
+        echo "Update completed at $(date)" >> $LOG_FILE
+      else
+        echo "Invalid ECR_REPO_URL or IMAGE_TAG in trigger file" >> $LOG_FILE
+      fi
+    else
+      echo "Failed to download update-trigger.txt" >> $LOG_FILE
     fi
-    
-    # Get the ECR login token
-    aws ecr get-login-password --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) | \
-      docker login --username AWS --password-stdin $ECR_REPO_URL
-    
-    # Pull and run the container
-    docker pull $ECR_REPO_URL:$IMAGE_TAG
-    docker rm -f prxy 2>/dev/null || true
-    docker run -d -p ${port}:${port} --env-file /home/ubuntu/prxy/prxy.env --name prxy $ECR_REPO_URL:$IMAGE_TAG
-    
-    # Remove the update trigger file from S3 after successful update
-    aws s3 rm s3://$S3_BUCKET/update-trigger.txt
-    echo "Update trigger removed from S3" >> $LOG_FILE
-    
-    echo "Update completed at $(date)" >> $LOG_FILE
   else
     echo "No update trigger found" >> $LOG_FILE
   fi
@@ -312,6 +339,11 @@ After=network.target
 [Service]
 Type=simple
 User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/prxy
+ExecStartPre=/bin/mkdir -p /home/ubuntu/prxy
+ExecStartPre=/bin/chown -R ubuntu:ubuntu /home/ubuntu/prxy
+ExecStartPre=/bin/chmod 755 /home/ubuntu/prxy
 ExecStart=/home/ubuntu/prxy/update.sh ${s3Bucket} ${updateInterval}
 Restart=always
 RestartSec=3
@@ -350,6 +382,19 @@ sudo systemctl enable prxy.service
 // Start Nginx
 systemctl enable nginx
 systemctl restart nginx
+
+// Configure aliases
+cat >> /home/ubuntu/.bashrc << 'EOL'
+
+# Custom aliases
+alias l='ls -l'
+alias ll='l -a'
+alias v=vim
+alias sv='sudo vim'
+alias d='sudo docker'
+alias sys='sudo systemctl'
+alias jou='sudo journalctl'
+EOL
 `;
 
 // Create an EC2 instance
