@@ -146,39 +146,10 @@ sudo usermod -aG docker ubuntu
 mkdir -p /home/ubuntu/prxy
 touch /home/ubuntu/prxy/update.log
 
-# Configure Nginx as a reverse proxy with SSL
+# Configure Nginx initially with just a placeholder - will be fully configured after SSL setup
 cat > /etc/nginx/sites-available/prxy << 'EOFNGINX'
-server {
-    listen 80;
-    server_name _;
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl;
-    server_name _;
-
-    # SSL configuration will be added by setup-ssl.sh
-
-    location / {
-        proxy_pass http://localhost:PORT_PLACEHOLDER;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
+# This is a placeholder that will be replaced by the SSL setup script
 EOFNGINX
-
-# Replace the port placeholder with the actual port
-sed -i "s/PORT_PLACEHOLDER/${port}/g" /etc/nginx/sites-available/prxy
 
 # Enable the Nginx site
 ln -s /etc/nginx/sites-available/prxy /etc/nginx/sites-enabled/
@@ -209,15 +180,38 @@ chmod +x /home/ubuntu/prxy/renew-ssl.sh
 echo "0 0,12 * * * /home/ubuntu/prxy/renew-ssl.sh" | crontab -
 
 # Create a script to set up initial SSL certificate
-cat > /home/ubuntu/prxy/setup-ssl.sh << 'EOL'
+cat > /home/ubuntu/prxy/setup-ssl.sh << EOL
 #!/bin/bash
 # Get the public IP
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+PORT=${port}  # Use the port from Pulumi config
 
 # Check if domain file exists
 if [ -f /home/ubuntu/prxy/domain.txt ]; then
   DOMAIN=$(cat /home/ubuntu/prxy/domain.txt)
   echo "Using domain: $DOMAIN"
+  
+  # Create Nginx config for the domain
+  cat > /etc/nginx/sites-available/prxy << EOF
+server {
+    listen 443 ssl;
+    server_name $DOMAIN;
+
+    # SSL will be configured by certbot
+    
+    location / {
+        proxy_pass http://localhost:$PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+EOF
   
   # Get a certificate using the domain
   certbot --nginx --non-interactive --agree-tos --email admin@$DOMAIN -d $DOMAIN
@@ -232,8 +226,8 @@ else
     -subj "/CN=$PUBLIC_IP" \
     -addext "subjectAltName = IP:$PUBLIC_IP"
   
-  # Create a new Nginx config file directly instead of using sed
-  cat > /etc/nginx/sites-available/prxy << 'EOFNGINX'
+  # Create a Nginx config for IP-based SSL
+  cat > /etc/nginx/sites-available/prxy << EOF
 server {
     listen 80;
     server_name _;
@@ -251,7 +245,7 @@ server {
     ssl_certificate_key /etc/ssl/prxy/prxy.key;
 
     location / {
-        proxy_pass http://localhost:PORT_PLACEHOLDER;
+        proxy_pass http://localhost:$PORT;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -262,13 +256,10 @@ server {
         proxy_cache_bypass $http_upgrade;
     }
 }
-EOFNGINX
-
-  # Replace the port placeholder with the actual port
-  sed -i "s/PORT_PLACEHOLDER/${port}/g" /etc/nginx/sites-available/prxy
+EOF
 fi
 
-# Restart Nginx to apply changes
+# Apply the changes to Nginx
 systemctl restart nginx
 EOL
 
@@ -314,7 +305,7 @@ if aws s3 ls s3://$S3_BUCKET/domain.txt &>/dev/null; then
   echo "Found domain configuration file, downloading" >> $LOG_FILE
   aws s3 cp s3://$S3_BUCKET/domain.txt /home/ubuntu/prxy/domain.txt
   # Run the SSL setup script to reconfigure with the domain if needed
-  sudo ./prxy/setup-ssl.sh
+  ./prxy/setup-ssl.sh
 fi
 
 while true; do
@@ -427,7 +418,7 @@ EOL
 systemctl enable prxy.service
 
 // Run the SSL setup script
-sudo ./prxy/setup-ssl.sh
+./prxy/setup-ssl.sh
 
 // Start Nginx
 systemctl enable nginx
