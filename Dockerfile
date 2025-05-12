@@ -39,12 +39,16 @@ RUN chmod +x /app/prxy && \
 # Define the user to run the application
 USER prxy
 
+# Set the default port
+ARG PORT
+ENV PORT=${PORT:-3000}
+
 # Expose the port
-EXPOSE 3000
+EXPOSE ${PORT}
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=2s --start-period=5s --retries=5 \
-    CMD curl -f http://localhost:3000/health || exit 1
+    CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Run the application
 CMD ["/app/prxy"] 
