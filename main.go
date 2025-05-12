@@ -21,11 +21,11 @@ import (
 
 // Default values if environment variables are not set
 const (
-	defaultPort      = "3000"
-	defaultClaudeURL = "https://api.anthropic.com"
-	anthropicVersion = "2023-06-01"
-	timeout          = 5 * time.Minute
-	shutdownTimeout  = 30 * time.Second
+	defaultPort             = "3000"
+	defaultClaudeURL        = "https://api.anthropic.com"
+	defaultAnthropicVersion = "2023-06-01"
+	timeout                 = 5 * time.Minute
+	shutdownTimeout         = 30 * time.Second
 )
 
 // Custom type for context keys to avoid collisions
@@ -42,23 +42,16 @@ const (
 	colorYellow = "\033[33m"
 	colorBlue   = "\033[34m"
 	colorPurple = "\033[35m"
-	colorCyan   = "\033[36m"
 )
 
-// Log level prefixes with colors
+// Log type prefixes with colors
 const (
-	prefixInfo    = colorGreen + "[INFO]" + colorReset + " "
 	prefixError   = colorRed + "[ERROR]" + colorReset + " "
 	prefixWarning = colorYellow + "[WARN]" + colorReset + " "
-	prefixDebug   = colorCyan + "[DEBUG]" + colorReset + " "
+	prefixInfo    = colorGreen + "[INFO]" + colorReset + " "
 	prefixRequest = colorBlue + "[REQ]" + colorReset + " "
 	prefixSystem  = colorPurple + "[SYS]" + colorReset + " "
 )
-
-// logInfo logs informational messages
-func logInfo(format string, v ...interface{}) {
-	log.Printf(prefixInfo+format, v...)
-}
 
 // logError logs error messages
 func logError(format string, v ...interface{}) {
@@ -70,9 +63,9 @@ func logWarning(format string, v ...interface{}) {
 	log.Printf(prefixWarning+format, v...)
 }
 
-// logDebug logs debug messages
-func logDebug(format string, v ...interface{}) {
-	log.Printf(prefixDebug+format, v...)
+// logInfo logs informational messages
+func logInfo(format string, v ...interface{}) {
+	log.Printf(prefixInfo+format, v...)
 }
 
 // logRequest logs request-related messages
@@ -347,7 +340,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Set the required headers
 	proxyReq.Header.Set("Content-Type", "application/json")
-	proxyReq.Header.Set("anthropic-version", anthropicVersion)
+	proxyReq.Header.Set("anthropic-version", defaultAnthropicVersion)
 
 	// Copy relevant headers from the original request
 	for header, values := range r.Header {
@@ -360,9 +353,9 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 				proxyReq.Header.Set(header, value)
 				// Log headers being set (but hide actual auth values)
 				if headerName == "authorization" || headerName == "x-api-key" {
-					logDebug("[%s] Forwarding header: %s: [REDACTED]", requestID, header)
+					logRequest(requestID, "Forwarding header: %s: [REDACTED]", header)
 				} else {
-					logDebug("[%s] Forwarding header: %s: %s", requestID, header, value)
+					logRequest(requestID, "Forwarding header: %s: %s", header, value)
 				}
 			}
 		}
@@ -405,7 +398,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.StatusCode != http.StatusOK {
 			logError("[%s] Claude API error response: %s", requestID, string(responseBody))
 		} else {
-			logInfo("[%s] Sending complete non-streaming response (%d bytes)", requestID, len(responseBody))
+			logRequest(requestID, "Sending complete non-streaming response (%d bytes)", len(responseBody))
 		}
 
 		// For proper handling of non-streaming responses, verify the JSON is valid
@@ -433,7 +426,7 @@ func claudeProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// For streaming responses, flush each chunk as it arrives
-	logInfo("[%s] Starting to stream response", requestID)
+	logRequest(requestID, "Starting to stream response")
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		logError("[%s] Streaming not supported by server", requestID)
