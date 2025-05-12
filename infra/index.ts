@@ -206,30 +206,36 @@ sudo systemctl enable prxy.service
 `;
 
 // Create an EC2 instance
-const instance = new aws.ec2.Instance(`${projectName}-ec2-instance`, {
-  ami: aws.ec2.getAmiOutput({
-    mostRecent: true,
-    owners: ["099720109477"], // Canonical (Ubuntu)
-    filters: [
-      {
-        name: "name",
-        values: ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"],
-      },
-      { name: "virtualization-type", values: ["hvm"] },
-    ],
-  }).id,
-  instanceType: ec2InstanceType,
-  subnetId: vpc.publicSubnetIds[0],
-  vpcSecurityGroupIds: [securityGroup.id],
-  iamInstanceProfile: instanceProfile.name,
-  userData,
-  tags: {
-    Name: projectName,
-    ImageTag: imageTag,
-    DeployedAt: deploymentTimestamp.toString(),
-    Project: projectName,
+const instance = new aws.ec2.Instance(
+  `${projectName}-ec2-instance`,
+  {
+    ami: aws.ec2.getAmiOutput({
+      mostRecent: true,
+      owners: ["099720109477"], // Canonical (Ubuntu)
+      filters: [
+        {
+          name: "name",
+          values: ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"],
+        },
+        { name: "virtualization-type", values: ["hvm"] },
+      ],
+    }).id,
+    instanceType: ec2InstanceType,
+    subnetId: vpc.publicSubnetIds[0],
+    vpcSecurityGroupIds: [securityGroup.id],
+    iamInstanceProfile: instanceProfile.name,
+    userData,
+    tags: {
+      Name: projectName,
+      ImageTag: imageTag,
+      DeployedAt: deploymentTimestamp.toString(),
+      Project: projectName,
+    },
   },
-});
+  {
+    replaceOnChanges: ["userData"],
+  }
+);
 
 // Create an Elastic IP for the instance
 const elasticIp = new aws.ec2.Eip(`${projectName}-eip`, {
