@@ -37,6 +37,14 @@ const securityGroup = new aws.ec2.SecurityGroup(`${projectName}-sg`, {
       cidrBlocks: ["0.0.0.0/0"],
       description: "PRXY server access",
     },
+    // Allow HTTPS access from anywhere
+    {
+      protocol: "tcp",
+      fromPort: 443,
+      toPort: 443,
+      cidrBlocks: ["0.0.0.0/0"],
+      description: "HTTPS access",
+    },
     // Allow SSH access from anywhere
     {
       protocol: "tcp",
@@ -125,7 +133,7 @@ const instanceProfile = new aws.iam.InstanceProfile(
 const userData = pulumi.interpolate`#!/bin/bash
 # Install dependencies
 sudo apt-get update
-sudo apt-get install -y docker.io awscli
+sudo apt-get install -y docker.io awscli nginx certbot python3-certbot-nginx
 
 # Start Docker service
 sudo systemctl start docker
@@ -134,7 +142,100 @@ sudo systemctl enable docker
 # Create directory for application files
 mkdir -p /home/ubuntu/prxy
 
-# Create update script
+# Configure Nginx as a reverse proxy with SSL
+cat > /etc/nginx/sites-available/prxy << 'EOL'
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name _;
+
+    # SSL configuration will be added by Certbot
+
+    location / {
+        proxy_pass http://localhost:${port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+EOL
+
+# Enable the Nginx site
+ln -s /etc/nginx/sites-available/prxy /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+
+# Setup auto-renewal script for SSL certificates
+cat > /home/ubuntu/prxy/renew-ssl.sh << 'EOL'
+#!/bin/bash
+# This script will be run by cron to renew SSL certificates
+
+# Get the public IP
+PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+
+# Check if domain is configured, if not, use IP address
+if [ -f /home/ubuntu/prxy/domain.txt ]; then
+  DOMAIN=$(cat /home/ubuntu/prxy/domain.txt)
+else
+  DOMAIN=$PUBLIC_IP
+fi
+
+# Attempt to renew the certificate
+certbot renew --nginx --non-interactive
+EOL
+
+chmod +x /home/ubuntu/prxy/renew-ssl.sh
+
+# Add a cron job to run the renewal script twice a day
+(crontab -l 2>/dev/null; echo "0 0,12 * * * /home/ubuntu/prxy/renew-ssl.sh") | crontab -
+
+# Create a script to set up initial SSL certificate
+cat > /home/ubuntu/prxy/setup-ssl.sh << 'EOL'
+#!/bin/bash
+# Get the public IP
+PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+
+# Check if domain file exists
+if [ -f /home/ubuntu/prxy/domain.txt ]; then
+  DOMAIN=$(cat /home/ubuntu/prxy/domain.txt)
+  echo "Using domain: $DOMAIN"
+  
+  # Get a certificate using the domain
+  certbot --nginx --non-interactive --agree-tos --email admin@$DOMAIN -d $DOMAIN
+else
+  echo "No domain configured, using self-signed certificate for IP: $PUBLIC_IP"
+  
+  # Create self-signed certificate for the IP address
+  mkdir -p /etc/ssl/prxy
+  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout /etc/ssl/prxy/prxy.key \
+    -out /etc/ssl/prxy/prxy.crt \
+    -subj "/CN=$PUBLIC_IP" \
+    -addext "subjectAltName = IP:$PUBLIC_IP"
+  
+  # Configure Nginx to use the self-signed certificate
+  sed -i "s/# SSL configuration will be added by Certbot/ssl_certificate \/etc\/ssl\/prxy\/prxy.crt;\n    ssl_certificate_key \/etc\/ssl\/prxy\/prxy.key;/" /etc/nginx/sites-available/prxy
+fi
+
+# Restart Nginx to apply changes
+systemctl restart nginx
+EOL
+
+chmod +x /home/ubuntu/prxy/setup-ssl.sh
+
+// Create update script
 cat > /home/ubuntu/prxy/update.sh << 'EOL'
 #!/bin/bash
 S3_BUCKET=$1
@@ -142,6 +243,14 @@ INTERVAL=$2
 LOG_FILE="/home/ubuntu/prxy/update.log"
 
 echo "Starting update checker with interval $INTERVAL seconds" >> $LOG_FILE
+
+# Check for a domain config file in S3 and download it if it exists
+if aws s3 ls s3://$S3_BUCKET/domain.txt &>/dev/null; then
+  echo "Found domain configuration file, downloading" >> $LOG_FILE
+  aws s3 cp s3://$S3_BUCKET/domain.txt /home/ubuntu/prxy/domain.txt
+  # Run the SSL setup script to reconfigure with the domain if needed
+  /home/ubuntu/prxy/setup-ssl.sh
+fi
 
 while true; do
   echo "Checking for updates at $(date)" >> $LOG_FILE
@@ -162,6 +271,12 @@ while true; do
     
     # Get the environment file from S3
     aws s3 cp s3://$S3_BUCKET/prxy.env /home/ubuntu/prxy/prxy.env
+    
+    # Check again for a domain config file in S3 and download it if it exists
+    if aws s3 ls s3://$S3_BUCKET/domain.txt &>/dev/null; then
+      echo "Found domain configuration file, downloading" >> $LOG_FILE
+      aws s3 cp s3://$S3_BUCKET/domain.txt /home/ubuntu/prxy/domain.txt
+    fi
     
     # Get the ECR login token
     aws ecr get-login-password --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) | \
@@ -185,10 +300,10 @@ while true; do
 done
 EOL
 
-# Make the update script executable
+// Make the update script executable
 chmod +x /home/ubuntu/prxy/update.sh
 
-# Create a systemd service for the updater
+// Create a systemd service for the updater
 cat > /etc/systemd/system/prxy-updater.service << EOL
 [Unit]
 Description=PRXY Updater
@@ -205,11 +320,11 @@ RestartSec=3
 WantedBy=multi-user.target
 EOL
 
-# Enable and start the updater service
+// Enable and start the updater service
 systemctl enable prxy-updater.service
 systemctl start prxy-updater.service
 
-# Setup a service to restart the container on reboot
+// Setup a service to restart the container on reboot
 cat > /etc/systemd/system/prxy.service << EOL
 [Unit]
 Description=PRXY Container
@@ -226,8 +341,15 @@ ExecStop=/usr/bin/docker stop prxy
 WantedBy=multi-user.target
 EOL
 
-# Enable the PRXY service to start on boot
+// Enable the PRXY service to start on boot
 sudo systemctl enable prxy.service
+
+// Run the SSL setup script
+/home/ubuntu/prxy/setup-ssl.sh
+
+// Start Nginx
+systemctl enable nginx
+systemctl restart nginx
 `;
 
 // Create an EC2 instance
@@ -274,6 +396,7 @@ const elasticIp = new aws.ec2.Eip(`${projectName}-eip`, {
 
 // Export deployment details
 export const publicIp = elasticIp.publicIp;
-export const endpoint = pulumi.interpolate`http://${elasticIp.publicIp}:${port}`;
+export const httpEndpoint = pulumi.interpolate`http://${elasticIp.publicIp}:${port}`;
+export const httpsEndpoint = pulumi.interpolate`https://${elasticIp.publicIp}`;
 export const deployedImageTag = imageTag;
 export const deployedAt = deploymentTimestamp.toString();

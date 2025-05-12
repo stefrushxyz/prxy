@@ -107,6 +107,7 @@ PRXY includes a complete GitHub Actions workflow that deploys the server to AWS 
 - **Amazon ECR** for container registry
 - **Amazon EC2** for hosting the server
 - **Pulumi** for infrastructure as code
+- **TLS/HTTPS** for secure communication
 
 To use the AWS deployment:
 
@@ -124,10 +125,35 @@ To use the AWS deployment:
    - `EC2_INSTANCE_TYPE`: EC2 instance type to use (default: 't3.micro')
    - `UPDATE_INTERVAL`: Seconds between update checks (default: '10')
    - `PORT`: Port to expose the server on (default: '3000')
+   - `DOMAIN_NAME`: Your domain name for TLS certificate (optional, uses self-signed cert with IP if not provided)
 
 3. Push to your `main` branch or manually trigger the workflow
 
 See the [infra/README.md](infra/README.md) file for more details on the AWS deployment.
+
+## TLS Support
+
+PRXY supports HTTPS through two methods:
+
+1. **Domain-based TLS**: If you provide a `DOMAIN_NAME` variable in your GitHub repository, PRXY will automatically obtain a valid Let's Encrypt certificate for your domain. You need to point your domain's DNS to the server's IP address.
+
+2. **Self-signed certificates**: If no domain name is provided, PRXY will automatically generate and use a self-signed certificate with the EC2 instance's IP address. This provides encryption but will show a browser warning.
+
+### Accessing PRXY securely
+
+After deployment, the PRXY server will be available via both HTTP and HTTPS:
+
+```
+http://<EC2-Public-IP>:3000  # Will redirect to HTTPS
+https://<EC2-Public-IP>      # Secure endpoint
+```
+
+If you provided a domain name:
+
+```
+http://<your-domain>:3000  # Will redirect to HTTPS
+https://<your-domain>      # Secure endpoint
+```
 
 ## Client Examples
 

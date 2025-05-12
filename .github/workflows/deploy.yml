@@ -12,6 +12,7 @@ env:
   UPDATE_INTERVAL: ${{ vars.UPDATE_INTERVAL || '10' }} # Seconds between update checks
   PORT: ${{ vars.PORT || '3000' }}
   S3_BUCKET: ${{ vars.PROJECT_NAME || 'prxy' }}-s3-env
+  DOMAIN_NAME: ${{ vars.DOMAIN_NAME || '' }} # Optional domain name for SSL cert
 
 jobs:
   build-and-push:
@@ -118,6 +119,12 @@ jobs:
           EOL
           aws s3 cp prxy.env s3://${{ env.S3_BUCKET }}/prxy.env
 
+          # If domain name is provided, create a domain configuration file
+          if [ -n "$DOMAIN_NAME" ]; then
+            echo "$DOMAIN_NAME" > domain.txt
+            aws s3 cp domain.txt s3://${{ env.S3_BUCKET }}/domain.txt
+          fi
+
       - name: Deploy with Pulumi
         id: pulumi-deploy
         working-directory: ./infra
@@ -173,7 +180,8 @@ jobs:
           echo "Pulumi stack output:"
           echo "--------------------------------"
           echo "publicIp: $(pulumi stack output publicIp)"
-          echo "endpoint: $(pulumi stack output endpoint)"
+          echo "httpEndpoint: $(pulumi stack output httpEndpoint)"
+          echo "httpsEndpoint: $(pulumi stack output httpsEndpoint)"
           echo "deployedImageTag: $(pulumi stack output deployedImageTag)"
           echo "deployedAt: $(pulumi stack output deployedAt)"
           echo "--------------------------------"
