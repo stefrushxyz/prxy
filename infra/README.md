@@ -34,8 +34,15 @@ The following secrets must be configured in your GitHub repository:
 - `AWS_ACCESS_KEY_ID`: AWS access key with permissions for ECR, EC2, S3, and IAM
 - `AWS_SECRET_ACCESS_KEY`: Corresponding AWS secret key
 - `PULUMI_ACCESS_TOKEN`: Access token for your Pulumi account
-- `S3_BUCKET`: Name of the S3 bucket to store environment files
 - `ALLOWED_API_KEYS`: Comma-separated list of API keys allowed to use the proxy
+
+You can also configure these optional variables:
+
+- `PROJECT_NAME`: Name for your project (default: 'prxy')
+- `AWS_REGION`: AWS region to deploy to (default: 'us-east-1')
+- `EC2_INSTANCE_TYPE`: EC2 instance type to use (default: 't3.micro')
+- `UPDATE_INTERVAL`: Cron schedule for update checks (default: '\*/1 \* \* \* \*')
+- `PORT`: Port to expose the server on (default: '3000')
 
 ## Manual Deployment
 
@@ -56,19 +63,24 @@ If you need to deploy manually without GitHub Actions:
    npm install
    pulumi stack select dev --create
    pulumi config set aws:region us-east-1  # Or your preferred region
-   pulumi config set ECR_REPO_URL <your-ecr-repo-url>
-   pulumi config set S3_BUCKET <your-s3-bucket>
+   pulumi config set PROJECT_NAME prxy  # Or your preferred project name
+   pulumi config set EC2_INSTANCE_TYPE t3.micro  # Or your preferred instance type
+   pulumi config set UPDATE_INTERVAL "*/1 * * * *"  # Or your preferred cron schedule
+   pulumi config set IMAGE_TAG latest
    ```
 
 3. Create and upload the environment file:
 
    ```bash
+   # S3 bucket will be named PROJECT_NAME-s3-env (e.g., prxy-s3-env)
+   aws s3 mb s3://prxy-s3-env  # Replace prxy with your PROJECT_NAME if changed
+
    cat > prxy.env << EOL
    PORT=3000
    CLAUDE_API_URL=https://api.anthropic.com
    ALLOWED_API_KEYS=key1,key2,key3
    EOL
-   aws s3 cp prxy.env s3://<your-s3-bucket>/prxy.env
+   aws s3 cp prxy.env s3://prxy-s3-env/prxy.env  # Replace prxy with your PROJECT_NAME if changed
    ```
 
 4. Deploy with Pulumi:

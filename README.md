@@ -115,10 +115,17 @@ To use the AWS deployment:
    - `AWS_ACCESS_KEY_ID`: AWS access key with permissions for ECR, EC2, S3, and IAM
    - `AWS_SECRET_ACCESS_KEY`: Corresponding AWS secret key
    - `PULUMI_ACCESS_TOKEN`: Access token for your Pulumi account
-   - `S3_BUCKET`: Name of the S3 bucket to store environment files
    - `ALLOWED_API_KEYS`: Comma-separated list of API keys allowed to use the proxy
 
-2. Push to your `main` branch or manually trigger the workflow
+2. Optionally configure GitHub repository variables:
+
+   - `PROJECT_NAME`: Name for your project (default: 'prxy')
+   - `AWS_REGION`: AWS region to deploy to (default: 'us-east-1')
+   - `EC2_INSTANCE_TYPE`: EC2 instance type to use (default: 't3.micro')
+   - `UPDATE_INTERVAL`: Cron schedule for update checks (default: '\*/1 \* \* \* \*')
+   - `PORT`: Port to expose the server on (default: '3000')
+
+3. Push to your `main` branch or manually trigger the workflow
 
 See the [infra/README.md](infra/README.md) file for more details on the AWS deployment.
 
