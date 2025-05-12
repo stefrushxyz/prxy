@@ -147,13 +147,13 @@ mkdir -p /home/ubuntu/prxy
 touch /home/ubuntu/prxy/update.log
 
 # Configure Nginx as a reverse proxy with SSL
-cat > /etc/nginx/sites-available/prxy << 'EOL'
+cat > /etc/nginx/sites-available/prxy << EOF
 server {
     listen 80;
     server_name _;
 
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://\$host\$request_uri;
     }
 }
 
@@ -161,21 +161,21 @@ server {
     listen 443 ssl;
     server_name _;
 
-    # SSL configuration will be added by Certbot
+    # SSL configuration will be added by setup-ssl.sh
 
     location / {
         proxy_pass http://localhost:${port};
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
     }
 }
-EOL
+EOF
 
 # Enable the Nginx site
 ln -s /etc/nginx/sites-available/prxy /etc/nginx/sites-enabled/
@@ -229,9 +229,37 @@ else
     -subj "/CN=$PUBLIC_IP" \
     -addext "subjectAltName = IP:$PUBLIC_IP"
   
-  # Configure Nginx to use the self-signed certificate
-  sed -i 's/# SSL configuration will be added by Certbot/ssl_certificate \/etc\/ssl\/prxy\/prxy.crt;/' /etc/nginx/sites-available/prxy
-  sed -i '/ssl_certificate \/etc\/ssl\/prxy\/prxy.crt;/a \    ssl_certificate_key \/etc\/ssl\/prxy\/prxy.key;' /etc/nginx/sites-available/prxy
+  # Create a new Nginx config file directly instead of using sed
+  cat > /etc/nginx/sites-available/prxy << EOF
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name _;
+
+    ssl_certificate /etc/ssl/prxy/prxy.crt;
+    ssl_certificate_key /etc/ssl/prxy/prxy.key;
+
+    location / {
+        proxy_pass http://localhost:${port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+    }
+}
+EOF
 fi
 
 # Restart Nginx to apply changes
